@@ -25,6 +25,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 #include "memory_mapper.h"
 #include "hypervisor.h"
 #include "configdb.h"
+#include "uart_monitor.h"
 #include "xemu/f011_core.h"
 #include "xemu/emutools_files.h"
 #include "xemu/basic_text.h"
@@ -262,8 +263,10 @@ void vic4_close_frame_access ( void )
 			h = h - y1 + 1;
 		}
 		vic4_registered_screenshot_request = 0;
+		extern const char *uartmon_screenshot_path ( void );
+		const char *umon_path = uartmon_screenshot_path();
 		if (!xemu_screenshot_png(
-			NULL, configdb.screenshot_and_exit,
+			NULL, umon_path ? umon_path : configdb.screenshot_and_exit,
 			1, 1,		// no ratio/zoom correction is applied
 			pixel_start + y1 * TEXTURE_WIDTH + x1,	// pixel pointer corresponding to the top left corner of the viewport
 			w,		// width of the viewport
@@ -274,6 +277,7 @@ void vic4_close_frame_access ( void )
 			if (p)
 				OSD(-1, -1, "%s", p + 1);
 		}
+		uartmon_screenshot_done(xemu_screenshot_full_path);
 	}
 #endif
 	// Render "drive LED" if it was requested at all

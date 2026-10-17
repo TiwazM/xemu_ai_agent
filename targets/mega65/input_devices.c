@@ -29,6 +29,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 #include "matrix_mode.h"
 #include "dma65.h"
 #include "configdb.h"
+#include "uart_monitor.h"
 
 #include <string.h>
 
@@ -397,7 +398,7 @@ Uint8 cia1_in_b ( void )
 	return c64_keyboard_read_on_CIA1_B(
 		cia1.PRA | (~cia1.DDRA),
 		cia1.PRB | (~cia1.DDRB),
-		joystick_emu == 1 ? c64_get_joy_state() : 0xFF,
+		(joystick_emu == 1 ? c64_get_joy_state() : 0xFF) & umon_joy_mask[0],
 		port_d607 & 2
 	);
 }
@@ -408,7 +409,7 @@ Uint8 cia1_in_a ( void )
 	return c64_keyboard_read_on_CIA1_A(
 		cia1.PRB | (~cia1.DDRB),
 		cia1.PRA | (~cia1.DDRA),
-		joystick_emu == 2 ? c64_get_joy_state() : 0xFF
+		(joystick_emu == 2 ? c64_get_joy_state() : 0xFF) & umon_joy_mask[1]
 	);
 }
 
