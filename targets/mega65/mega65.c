@@ -683,6 +683,25 @@ static void update_emulator ( void )
 }
 
 
+// Like update_emulator(), but without touching the video frame: used from the pause/trace loop.
+static void update_emulator_paused ( void )
+{
+	hid_handle_all_sdl_events();
+	xemugui_iteration();
+#ifdef HAS_UARTMON_SUPPORT
+	uartmon_update();
+#endif
+#ifdef XEMU_HAS_SOCKET_API
+	if (XEMU_UNLIKELY(serialtcp_get_connection_error(false))) {
+		const char *err = serialtcp_get_connection_error(true);
+		ERROR_WINDOW("SerialTCP failure:\n%s", err);
+	}
+#endif
+	xemu_timekeeping_delay(videostd_frametime);
+	update_emulated_time_sources();
+}
+
+
 static void emulation_loop ( void )
 {
 	static int cycles = 0;	// used for "balance" CPU cycles per scanline, must be static!
@@ -719,11 +738,13 @@ static void emulation_loop ( void )
 				uartmon_finish_command();
 			}
 #endif
-			// we still need to feed our emulator with update events ... It also slows this pause-busy-loop down to every full frames (~25Hz) <--- XXX totally inaccurate now!
-			// note, that it messes timing up a bit here, as there is update_emulator() calls later in the "normal" code as well
-			// this can be a bug, but real-time emulation is not so much an issue if you eg doing trace of your code ...
-			// XXX it's maybe a problem to call this!!! update_emulator() is called here which closes frame but no no reopen then ... FIXME: handle this somehow!
-			update_emulator();
+			// we still need to feed our emulator with update events (SDL, GUI, uart monitor) while paused.
+			// This must NOT close the video frame: the frame being rendered stays open until the emulation
+			// is resumed and finishes it. Closing it here (as update_emulator() does) unlocked the SDL texture
+			// and left the VIC-IV renderer with a dangling pixel pointer, which crashed on resume with
+			// USE_LOCKED_TEXTURE (SIGSEGV/SIGBUS in the renderer's memmove on macOS). The window simply
+			// keeps showing the last completed frame while paused.
+			update_emulator_paused();
 			if (trace_step_trigger) {
 				// if monitor triggers a step, break the pause loop, however we will get back the control on the next
 				// iteration of the infinite "for" loop, as "paused" is not altered
