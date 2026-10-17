@@ -811,6 +811,9 @@ static void emulation_loop ( void )
 #ifdef	XEMU_ARCH_HTML
 	emgw_msg_gate_dispatch();
 #endif
+#ifdef HAS_UARTMON_SUPPORT
+	uartmon_frame_end();
+#endif
 	update_emulator();
 }
 

@@ -26,6 +26,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 #include "xemu/cpu65.h"
 #include "memory_mapper.h"
 #include "sdcard.h"
+#include "vic4.h"
 #include "xemu/emutools_socketapi.h"
 #include <string.h>
 
@@ -34,7 +35,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 #include <sys/un.h>
 #endif
 
-#define UMON_WRITE_BUFFER_SIZE	0x4000
+#define UMON_WRITE_BUFFER_SIZE	0x40000
 #define umon_printf(...)	do { \
 					if (XEMU_LIKELY(umon_write_size < UMON_WRITE_BUFFER_SIZE - 1)) \
 						umon_write_size += snprintf(umon_write_buffer + umon_write_size, UMON_WRITE_BUFFER_SIZE - umon_write_size, __VA_ARGS__); \
@@ -60,6 +61,11 @@ void (*m65mon_callback)(void) = NULL;
 int breakpoint_pc = -1;
 int watchpoint_addr = -1;
 int watchpoint_val = -1;
+// --- AI-agent proof of concept additions (see AI-POC.md) ---
+int   umon_frames_left = 0;			// >0: run this many frames, then pause and answer
+Uint8 umon_joy_mask[2] = { 0xFF, 0xFF };	// active-low joystick override masks for port 1 and 2
+static int   umon_shot_pending = 0;
+static char  umon_shot_path[PATH_MAX];
 
 extern int cpu_cycles_per_scanline;
 
@@ -398,6 +404,59 @@ static void execute_command ( char *cmd )
 						OSD(-1, -1, "Unmounted (%d)", unit);
 					}
 				}
+			} else if (!strncmp(cmd, "frames", 6)) {
+				// ~frames N  : run exactly N (hex) frames with the current inputs, then pause and show registers
+				cmd = parse_hex_arg(cmd + 6, &par1, 1, 0xFFFFFF);
+				if (cmd && check_end_of_command(cmd, 1)) {
+					umon_frames_left = par1;
+					umon_send_ok = 0;
+					m65mon_callback = m65mon_show_regs;
+					paused = 0;
+				}
+			} else if (!strncmp(cmd, "joy", 3) && (cmd[3] == '1' || cmd[3] == '2')) {
+				// ~joy1 XX / ~joy2 XX : held joystick bits (1=up 2=down 4=left 8=right 10=fire), 0 releases
+				const int port = cmd[3] - '1';
+				cmd = parse_hex_arg(cmd + 4, &par1, 0, 0x1F);
+				if (cmd && check_end_of_command(cmd, 1)) {
+					umon_joy_mask[port] = 0xFF & ~par1;
+					umon_printf("JOY%d %02X", port + 1, par1);
+				}
+			} else if (!strncmp(cmd, "shot", 4)) {
+				// ~shot PATH : write the next finished frame as PNG to PATH; answers when the file is written
+				cmd += 4;
+				while (*cmd == 32)
+					cmd++;
+				if (*cmd && strlen(cmd) < sizeof(umon_shot_path)) {
+					strcpy(umon_shot_path, cmd);
+					umon_shot_pending = 1;
+					vic4_registered_screenshot_request = 1;
+					umon_send_ok = 0;
+				} else
+					umon_printf(UMON_SYNTAX_ERROR "path missing or too long");
+			} else if (!strncmp(cmd, "sleepless", 9)) {
+				// ~sleepless 0|1 : run as fast as the host can (1) or at real speed (0)
+				cmd = parse_hex_arg(cmd + 9, &par1, 0, 1);
+				if (cmd && check_end_of_command(cmd, 1)) {
+					xemu_sleepless_temporary_mode(par1);
+					umon_printf("SLEEPLESS %d", par1);
+				}
+			} else if (!strncmp(cmd, "mem", 3)) {
+				// ~mem ADDR LEN : hex dump of LEN (hex, max 20000) bytes from 28-bit ADDR as one line, no addresses
+				int len;
+				cmd = parse_hex_arg(cmd + 3, &par1, 0, 0xFFFFFFF);
+				if (cmd)
+					cmd = parse_hex_arg(cmd, &len, 1, 0x20000);
+				if (cmd && check_end_of_command(cmd, 1)) {
+					static const char hexd[] = "0123456789ABCDEF";
+					char *p = umon_write_buffer + umon_write_size;
+					for (int k = 0; k < len; k++) {
+						const unsigned int a = (par1 + k) & 0xFFFFFFF;
+						const Uint8 b = (a >> 16) == 0x777 ? debug_read_cpu_byte(a & 0xFFFF) : debug_read_linear_byte(a);
+						*p++ = hexd[b >> 4];
+						*p++ = hexd[b & 15];
+					}
+					umon_write_size = p - umon_write_buffer;
+				}
 			} else if (!strncmp(cmd, "mapping", 7)) {
 				char desc[10];
 				for (unsigned int i = 0; i < 16; i++) {
@@ -418,6 +477,28 @@ static void execute_command ( char *cmd )
 	}
 }
 
+
+const char *uartmon_screenshot_path ( void )
+{
+	return umon_shot_pending ? umon_shot_path : NULL;
+}
+
+// Called by vic4_close_frame_access() once a "~shot" request has been written to disk.
+void uartmon_screenshot_done ( const char *fullpath )
+{
+	if (!umon_shot_pending)
+		return;
+	umon_shot_pending = 0;
+	umon_printf("SHOT %s", fullpath);
+	uartmon_finish_command();
+}
+
+// Called by the main loop at the end of every frame.
+void uartmon_frame_end ( void )
+{
+	if (umon_frames_left > 0 && --umon_frames_left == 0)
+		paused = 1;	// pause loop will run m65mon_callback and finish the delayed "~frames" answer
+}
 
 /* ------------------------- SOCKET HANDLING, etc ------------------------- */
 
@@ -606,12 +687,15 @@ void uartmon_update ( void )
 			DEBUGPRINT("UARTMON: connection closed by peer while writing" NL);
 			return;
 		}
-		if (ret > 0) {
+		while (ret > 0) {
 			//debug_buffer_slice(umon_write_buffer + umon_write_pos, ret);
 			umon_write_pos += ret;
 			umon_write_size -= ret;
 			if (umon_write_size < 0)
 				FATAL("FATAL: negative umon_write_size!");
+			if (!umon_write_size)
+				break;
+			ret = xemusock_send(sock_client, umon_write_buffer + umon_write_pos, umon_write_size, &xerr);	// AI-POC: keep going while the socket takes it
 		}
 		if (umon_write_size)
 			return;	// if we still have bytes to write, return and leave the work for the next update
@@ -662,6 +746,16 @@ void uartmon_update ( void )
 				uartmon_finish_command();
 		}
 	}
+	// AI-POC: push the answer out right away instead of waiting a whole frame for the next update
+	while (umon_write_size && umon_send_ok) {
+		ret = xemusock_send(sock_client, umon_write_buffer + umon_write_pos, umon_write_size, &xerr);
+		if (ret <= 0)
+			break;
+		umon_write_pos += ret;
+		umon_write_size -= ret;
+	}
+	if (!umon_write_size)
+		umon_write_pos = 0;
 }
 
 #endif

@@ -24,6 +24,10 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 extern void (*m65mon_callback)(void);
 extern int  breakpoint_pc;
+extern int  umon_frames_left;
+extern Uint8 umon_joy_mask[2];
+extern void uartmon_screenshot_done ( const char *fullpath );
+extern void uartmon_frame_end ( void );
 
 extern int  uartmon_init           ( const char *fn );
 extern int  uartmon_is_active      ( void );
