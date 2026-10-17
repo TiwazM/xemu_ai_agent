@@ -33,6 +33,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 #ifndef XEMU_ARCH_WIN
 #include <unistd.h>
 #include <sys/un.h>
+#include <signal.h>
 #endif
 
 #define UMON_WRITE_BUFFER_SIZE	0x40000
@@ -587,6 +588,11 @@ int uartmon_init ( const char *fn )
 		xemusock_close(sock, NULL);
 		return 1;
 	}
+#ifndef XEMU_ARCH_WIN
+	// A client that disconnects while an answer is still pending (eg a CLI tool that gave up
+	// waiting) must not kill the emulator: writing to the closed socket would raise SIGPIPE.
+	signal(SIGPIPE, SIG_IGN);
+#endif
 	DEBUG("UARTMON: monitor is listening on socket %s" NL, fn);
 	sock_client = UNCONNECTED;	// no client connection yet
 	sock_server = sock;		// now set the server socket visible outside of this function too
