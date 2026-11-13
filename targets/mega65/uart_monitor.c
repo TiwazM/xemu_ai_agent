@@ -28,6 +28,8 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 #include "sdcard.h"
 #include "vic4.h"
 #include "xemu/emutools_socketapi.h"
+#include "mcp65.h"
+#include "configdb.h"
 #include <string.h>
 
 #ifndef XEMU_ARCH_WIN
@@ -62,7 +64,7 @@ void (*m65mon_callback)(void) = NULL;
 int breakpoint_pc = -1;
 int watchpoint_addr = -1;
 int watchpoint_val = -1;
-// --- Monitor extensions for automated testing / AI agents (~frames, ~joy, ~shot, ~sleepless, ~mem, ~load) ---
+// --- Monitor extensions for automated testing / AI agents (~frames, ~joy, ~shot, ~sleepless, ~mem, ~load, ~mcpinit) ---
 int   umon_frames_left = 0;			// >0: run this many frames, then pause and answer
 Uint8 umon_joy_mask[2] = { 0xFF, 0xFF };	// active-low joystick override masks for port 1 and 2
 static int   umon_shot_pending = 0;
@@ -476,6 +478,16 @@ static void execute_command ( char *cmd )
 						umon_printf("LOADED %X", n);
 					} else
 						umon_printf(UMON_SYNTAX_ERROR "no file name, or the file cannot be opened");
+				}
+			} else if (!strncmp(cmd, "mcpinit", 7)) {
+				// ~mcpinit : the M65-MCP as it is when the machine is switched on: its program memory, vertex array and
+				// result buffer cleared too, which no reset does (on a MEGA65: loading the core again). For tests,
+				// which start from that.
+				if (configdb.nomcp)
+					umon_printf(UMON_SYNTAX_ERROR "no M65-MCP (-nomcp)");
+				else {
+					mcp65_init();
+					umon_printf("MCP INIT");
 				}
 			} else if (!strncmp(cmd, "mapping", 7)) {
 				char desc[10];

@@ -1,0 +1,4 @@
+mcp_model.c, mcp_model.h: TiwazM/m65-mcp src/mcp/model
+    commit 15ea3f96bf59d920561a67ef73180cbddafbca55 2026-11-13
+SoftFloat: ucb-bar/berkeley-softfloat-3, specialisation ARM-VFPv2-defaultNaN
+    commit a0c6494cdc11865811dec815d5c0049fba9d82a8 2025-03-07

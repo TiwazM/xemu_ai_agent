@@ -109,6 +109,7 @@ static const struct xemutools_configdef_switch_st switch_options[] = {
 	{ "fullborders", "Show non-clipped display borders", &configdb.fullborders },
 	{ "nosound", "Disables audio output generation", &configdb.nosound },
 	{ "noopl3", "Disables OPL3 emulation", &configdb.noopl3 },
+	{ "nomcp", "Disables M65-MCP (mathematics coprocessor at $FFDF000) emulation", &configdb.nomcp },
 	{ "lockvideostd", "Lock video standard (programs cannot change it)", &configdb.lock_videostd },
 	{ "curskeyjoy", "Cursor keys as joystick [makes your emulator unsable to move cursor in BASIC/etc!]", &hid_joy_on_cursor_keys },
 	{ "showscanlines", "Show scanlines in V200 modes", &configdb.show_scanlines },
@@ -168,6 +169,7 @@ static const void *do_not_save_opts[] = {
 	&configdb.testing, &configdb.hyperdebug, &configdb.hyperdebugfreezer, &configdb.usestubrom, &configdb.useinitrom, &configdb.useutilmenu,
 	&configdb.cart, &configdb.winpos, &configdb.ramcheckread, &configdb.init_attic,
 	&configdb.prg_test, &configdb.prg_exit,
+	&configdb.nomcp,	// (a stock Xemu, which does not know the option, may read the same saved config)
 	NULL
 };
 

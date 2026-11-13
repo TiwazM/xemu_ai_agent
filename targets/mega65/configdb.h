@@ -109,6 +109,7 @@ struct configdb_st {
 	double	fast_mhz;
 	int	nosound;
 	int	noopl3;
+	int	nomcp;
 	int	sidmask;
 	int	audiobuffersize;
 	int	fastboot;

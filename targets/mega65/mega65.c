@@ -22,6 +22,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 #include "mega65.h"
 #include "xemu/cpu65.h"
 #include "dma65.h"
+#include "mcp65.h"
 #include "xemu/emutools_hid.h"
 #include "vic4.h"
 #include "sdcard.h"
@@ -144,6 +145,7 @@ void machine_set_speed ( int verbose )
 				break;
 		}
 		DEBUG("SPEED: CPU speed is set to %s, cycles per scanline: %d in %s (1MHz cycles per scanline: %f)" NL, cpu_clock_speed_string_p, cpu_cycles_per_scanline, videostd_name, videostd_1mhz_cycles_per_scanline);
+		mcp65_set_cpu_speed((double)cpu_cycles_per_scanline / (double)videostd_1mhz_cycles_per_scanline);
 		if (cpu_cycles_per_step > 1 && !hypervisor_is_debugged && !configdb.cpusinglestep)
 			cpu_cycles_per_step = cpu_cycles_per_scanline;	// if in trace mode (or hyper-debug ...), do not set this! So set only if non-trace and non-hyper-debug
 	}
@@ -430,6 +432,8 @@ static void mega65_init ( void )
 	cia2.TLAH = 1;
 	// *** Initialize DMA (we rely on memory and I/O decoder provided functions here for the purpose)
 	dma_init();
+	if (!configdb.nomcp)
+		mcp65_init();
 	sprintf(fast_mhz_as_string, "%.2fMHz", configdb.fast_mhz);
 	DEBUGPRINT("SPEED: fast clock is set to %.2fMHz." NL, configdb.fast_mhz);
 	cpu65_init_mega_specific();
