@@ -892,6 +892,7 @@ int cpu65_step (
 		CPU65.pf_i = 1;
 		CPU65.pf_d = 0;			// NOTE: D flag clearing was not done on the original 6502 I guess, but indeed on the 65C02 already
 		CPU65.pc = readWord(0xFFFA);
+		CPU65.cycles_done += 7;
 #ifdef CPU_STEP_MULTI_OPS
 		all_cycles += 7;
 		continue;
@@ -916,6 +917,7 @@ int cpu65_step (
 		CPU65.pf_i = 1;
 		CPU65.pf_d = 0;
 		CPU65.pc = readWord(0xFFFE);
+		CPU65.cycles_done += 7;
 #ifdef CPU_STEP_MULTI_OPS
 		all_cycles += 7;
 		continue;
@@ -2837,6 +2839,7 @@ int cpu65_step (
 	CPU65.prefix = PREFIX_NOTHING;
 do_not_clear_prefix:
 #endif
+	CPU65.cycles_done += CPU65.op_cycles;
 #ifdef CPU_STEP_MULTI_OPS
 	all_cycles += CPU65.op_cycles;
 	if (XEMU_UNLIKELY(CPU65.multi_step_stop_trigger)) {

@@ -72,6 +72,10 @@ struct cpu65_st {
 	int multi_step_stop_trigger;	// not used, only with multi-op mode but still here because some devices (like DMA) would use it
 	int irqLevel, nmiEdge;
 	int op_cycles;
+	// All the cycles of the opcodes (and interrupt entries) completed so far: a time base finer than the caller's of
+	// cpu65_step(), which in multi-op mode gets its cycles only once for many opcodes. The emulator target may use it
+	// (with op_cycles added: the opcode in progress); CPU65 core only counts it up.
+	Uint64 cycles_done;
 #ifdef CPU65_EXECUTION_CALLBACK_SUPPORT
 	bool execution_debug_callback;
 	// this must be used by the emulator target, CPU65 core will/can set this value, but never uses it:
