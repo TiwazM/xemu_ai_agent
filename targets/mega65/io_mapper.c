@@ -33,6 +33,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 #include "configdb.h"
 #include "mega65.h"
 #include "serialtcp.h"
+#include "xemu/cpu65.h"
 
 
 int    fpga_switches = 0;		// State of FPGA board switches (bits 0 - 15), set switch 12 (hypervisor serial output)
@@ -134,6 +135,28 @@ static inline void vdc_write_register ( const Uint8 reg, const Uint8 data )
 
 
 // ------------------ END: VDC specific ------------------
+
+
+// The hardware divider is busy for a few cycles after one of its operands is written: it makes up to
+// five steps, each doubling the bits it has right, and stops as soon as it has them all, which is the
+// sooner the more leading one bits the divisor has (once its leading zeros are shifted out). The cycles are
+// what a MEGA65 R6 shows (build/tests/timing-m65): DIVBUSY read by a BIT $D70F up to 3 one-cycle
+// instructions after the write is still set for most divisors, for $FFFFFFF0 only right after it.
+static Uint64 divider_busy_until = 0;
+
+static int divider_busy_cycles ( Uint32 divisor )
+{
+	int ones = 0, steps = 0;
+	if (divisor) {
+		while (!(divisor & 0x80000000U))
+			divisor <<= 1;
+		for (; divisor & 0x80000000U; divisor <<= 1)
+			ones++;
+	}
+	for (int bits = ones ? ones : 1; bits < 68 && steps < 5; bits <<= 1)
+		steps++;
+	return 4 + steps;
+}
 
 
 static XEMU_INLINE void update_hw_multiplier ( void )
@@ -359,8 +382,8 @@ Uint8 io_read ( unsigned int addr )
 			addr &= 0xFF;
 			if (addr < 15)		// FIXME!!!! 0x0F was part of DMA reg array, but it seems now used by divisor busy stuff??
 				return dma_read_reg(addr & 0xF);
-			if (addr == 0x0F)
-				return 0;	// FIXME: D70F bit 7 = 32/32 bits divisor busy flag, bit 6 = 32*32 mult busy flag. We're never busy, so the zero. But the OTHER bits??? Any purpose of those??
+			if (addr == 0x0F)	// D70F bit 7 = 32/32 bits divider busy flag, bit 6 = 32*32 mult busy flag (the multiplier is never busy)
+				return (mem_wait_on && cpu65.cycles_done + (Uint64)cpu65.op_cycles + dma_cycles_done < divider_busy_until) ? 0x80 : 0;
 			if (addr == 0xEF)	// $D7EF CPU:RAND Hardware random number generator
 				return rand() & 0xFF;
 			if (addr == 0xFE)
@@ -400,14 +423,20 @@ Uint8 io_read ( unsigned int addr )
 		case 0x0C:	// $DC00-$DCFF ~ C64 I/O mode
 		case 0x1C:	// $DC00-$DCFF ~ C65 I/O mode
 		case 0x3C:	// $DC00-$DCFF ~ M65 I/O mode
-			return (vic_registers[0x30] & 1) ? colour_ram[0x400 + (addr & 0xFF)] : cia_read(&cia1, addr & 0xF);
+			if (vic_registers[0x30] & 1)
+				return colour_ram[0x400 + (addr & 0xFF)];
+			mega65_cia_sync();
+			return cia_read(&cia1, addr & 0xF);
 		/* --------------------------------------- */
 		/* $DD00-$DDFF: CIA#2, EXTENDED COLOUR RAM */
 		/* --------------------------------------- */
 		case 0x0D:	// $DD00-$DDFF ~ C64 I/O mode
 		case 0x1D:	// $DD00-$DDFF ~ C65 I/O mode
 		case 0x3D:	// $DD00-$DDFF ~ M65 I/O mode
-			return (vic_registers[0x30] & 1) ? colour_ram[0x500 + (addr & 0xFF)] : cia_read(&cia2, addr & 0xF);
+			if (vic_registers[0x30] & 1)
+				return colour_ram[0x500 + (addr & 0xFF)];
+			mega65_cia_sync();
+			return cia_read(&cia2, addr & 0xF);
 		/* ----------------------------------------------------- */
 		/* $DE00-$DFFF: IO exp, EXTENDED COLOUR RAM, disk buffer */
 		/* ----------------------------------------------------- */
@@ -643,6 +672,8 @@ void io_write ( unsigned int addr, Uint8 data )
 			else if (addr >= 0x68 && addr <= 0x7F)
 				bigmult_valid_result = 0;
 			D7XX[addr] = data;
+			if (addr >= 0x70 && addr <= 0x77)	// an operand of the divider: it starts again
+				divider_busy_until = cpu65.cycles_done + (Uint64)cpu65.op_cycles + dma_cycles_done + divider_busy_cycles(xemu_u8p_to_u32le(D7XX + 0x74));
 			return;
 		/* ----------------------------------------------- */
 		/* $D800-$DFFF: in case of ethernet I/O mode only! */
@@ -679,8 +710,10 @@ void io_write ( unsigned int addr, Uint8 data )
 		case 0x3C:	// $DC00-$DCFF ~ M65 I/O mode
 			if (vic_registers[0x30] & 1)
 				write_colour_ram(0x400 + (addr & 0xFF), data);
-			else
+			else {
+				mega65_cia_sync();
 				cia_write(&cia1, addr & 0xF, data);
+			}
 			return;
 		/* --------------------------------------- */
 		/* $DD00-$DDFF: CIA#2, EXTENDED COLOUR RAM */
@@ -690,8 +723,10 @@ void io_write ( unsigned int addr, Uint8 data )
 		case 0x3D:	// $DD00-$DDFF ~ M65 I/O mode
 			if (vic_registers[0x30] & 1)
 				write_colour_ram(0x500 + (addr & 0xFF), data);
-			else
+			else {
+				mega65_cia_sync();
 				cia_write(&cia2, addr & 0xF, data);
+			}
 			return;
 		/* ----------------------------------------------------- */
 		/* $DE00-$DFFF: IO exp, EXTENDED COLOUR RAM, disk buffer */

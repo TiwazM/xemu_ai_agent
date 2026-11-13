@@ -182,7 +182,27 @@ static void  zero_page_checked_writer ( const Uint32 addr32, const Uint8 data ) 
 	zero_page_writer(addr32, data);
 }
 
+// The wait states of the MEGA65 at its full speed (40.5MHz), measured on a MEGA65 R6 (core 0.97) with
+// build/tests/timing-m65: what one access costs beyond the opcode's (or the DMA's) own cycles, in 1/16 cycles.
+// Chip RAM and ROM: nothing. Writes: nothing but to the attic RAM.
+int mem_wait_q4 = 0;
+int mem_wait_on = 0;
+#define WAIT_IO			(1 * 16)	// a read of the I/O area, of the SD buffer, of the I2C devices, of the ethernet buffer
+#define WAIT_COLOUR_RAM		(2 * 16)	// a read of colour RAM, wherever it shows: at $FF80000, at $1F800, in the I/O area
+#define WAIT_PALETTE		(3 * 16)	// a read of the palette in the I/O area
+#define WAIT_CHAR_RAM		(2 * 16)
+#define WAIT_MCP		(2 * 16)	// a read of the M65-MCP
+#define WAIT_ATTIC_RD_CPU	(13 * 16)	// the attic RAM is another world: 13 cycles a read, 13.6 for the further ones of
+#define WAIT_ATTIC_RD_CPU_MORE	(13 * 16 + 10)	// the same opcode (LDQ's four take 53.9)
+#define WAIT_ATTIC_WR_CPU	(3 * 16)
+#define WAIT_ATTIC_RD_DMA	(14 * 16 + 8)	// and for the DMA 14.5 a read, 3.4 a write of a fill (dma65.c: more for a copy)
+#define WAIT_ATTIC_WR_DMA	(3 * 16 + 7)
+
 static Uint8 main_ram_reader ( const Uint32 addr32 ) {
+	return main_ram[addr32];
+}
+static Uint8 shared_main_ram_reader ( const Uint32 addr32 ) {
+	mem_wait_q4 += WAIT_COLOUR_RAM;
 	return main_ram[addr32];
 }
 static void  main_ram_writer ( const Uint32 addr32, const Uint8 data ) {
@@ -206,15 +226,24 @@ static void  shared_colour_ram_writer ( const Uint32 addr32, const Uint8 data ) 
 	colour_ram[addr32 - 0xFF80000U] = data;
 }
 static Uint8 colour_ram_reader ( const Uint32 addr32 ) {
+	mem_wait_q4 += WAIT_COLOUR_RAM;
 	return colour_ram[addr32 - 0xFF80000U];
 }
 static void  colour_ram_writer ( const Uint32 addr32, const Uint8 data ) {
 	colour_ram[addr32 - 0xFF80000U] = data;
 }
 static Uint8 attic_ram_reader ( const Uint32 addr32 ) {
+	static Uint64 last_op = ~(Uint64)0;
+	if (in_dma)
+		mem_wait_q4 += WAIT_ATTIC_RD_DMA;
+	else {
+		mem_wait_q4 += (cpu65.cycles_done == last_op) ? WAIT_ATTIC_RD_CPU_MORE : WAIT_ATTIC_RD_CPU;
+		last_op = cpu65.cycles_done;
+	}
 	return attic_ram[addr32 - 0x8000000U];
 }
 static void  attic_ram_writer ( const Uint32 addr32, const Uint8 data ) {
+	mem_wait_q4 += in_dma ? WAIT_ATTIC_WR_DMA : WAIT_ATTIC_WR_CPU;
 	attic_ram[addr32 - 0x8000000U] = data;
 }
 static Uint8 hypervisor_ram_reader ( const Uint32 addr32 ) {
@@ -227,36 +256,49 @@ static void  opl3_writer ( const Uint32 addr32, const Uint8 data ) {
 	audio65_opl3_write(addr32 & 0xFFU, data);
 }
 static Uint8 io_reader ( const Uint32 addr32 ) {
-	return io_read(addr32 - 0xFFD0000U);
+	// (the address: the I/O mode in bits 12 and 13, then the register's as in $D000-$DFFF)
+	const Uint32 addr = addr32 - 0xFFD0000U, reg = addr & 0xFFFU;
+	if ((reg >= 0x800U && reg < 0xC00U) || (reg >= 0xC00U && (vic_registers[0x30] & 1)))
+		mem_wait_q4 += WAIT_COLOUR_RAM;
+	else if (reg >= 0x100U && reg < 0x400U && addr >= 0x1000U)
+		mem_wait_q4 += WAIT_PALETTE;
+	else
+		mem_wait_q4 += WAIT_IO;
+	return io_read(addr);
 }
 static void  io_writer ( const Uint32 addr32, const Uint8 data ) {
 	io_write(addr32 - 0xFFD0000U, data);
 }
 static Uint8 char_ram_reader ( const Uint32 addr32 ) {
+	mem_wait_q4 += WAIT_CHAR_RAM;
 	return char_ram[addr32 - 0xFF7E000U];
 }
 static void  char_ram_writer ( const Uint32 addr32, const Uint8 data ) {
 	char_ram[addr32 - 0xFF7E000U] = data;
 }
 static Uint8 disk_buffer_hypervisor_reader ( const Uint32 addr32 ) {
+	mem_wait_q4 += WAIT_IO;
 	return disk_buffers[addr32 - 0xFFD6000U];
 }
 static void  disk_buffer_hypervisor_writer ( const Uint32 addr32, const Uint8 data ) {
 	disk_buffers[addr32 - 0xFFD6000U] = data;
 }
 static Uint8 disk_buffer_user_reader ( const Uint32 addr32 ) {
+	mem_wait_q4 += WAIT_IO;
 	return disk_buffer_cpu_view[(addr32 - 0xFFD6000U) & 0x1FF];
 }
 static void  disk_buffer_user_writer ( const Uint32 addr32, const Uint8 data ) {
 	disk_buffer_cpu_view[(addr32 - 0xFFD6000U) & 0x1FF] = data;
 }
 static Uint8 eth_buffer_reader ( const Uint32 addr32 ) {
+	mem_wait_q4 += WAIT_IO;
 	return eth_rx_buf[addr32 - 0xFFDE800U];
 }
 static void  eth_buffer_writer ( const Uint32 addr32, const Uint8 data ) {
 	eth_tx_buf[addr32 - 0xFFDE800U] = data;
 }
 static Uint8 mcp_reader ( const Uint32 addr32 ) {
+	mem_wait_q4 += WAIT_MCP;
 	return mcp65_read(addr32 - MCP65_BASE_ADDR);
 }
 static void  mcp_writer ( const Uint32 addr32, const Uint8 data ) {
@@ -269,6 +311,7 @@ static void  slow_devices_writer ( const Uint32 addr32, const Uint8 data ) {
 	cart_write_byte(addr32 - 0x4000000U, data);
 }
 static Uint8 i2c_reader ( const Uint32 addr32 ) {
+	mem_wait_q4 += WAIT_IO;
 	return i2c_regs[addr32 - 0x0FFD7000U];
 }
 static void  i2c_writer ( const Uint32 addr32, const Uint8 data ) {
@@ -479,27 +522,23 @@ static void resolve_linear_slot ( const Uint32 slot, const Uint32 addr )
 #endif
 			break;
 		case MEM_SLOT_TYPE_SHARED_RAM:
-			mem_slot_rd_func[slot] = main_ram_reader;
+			// NOTE: no data pointers: writing requires special care, and a read is slow there (it is colour RAM)
+			mem_slot_rd_func[slot] = shared_main_ram_reader;
 			mem_slot_wr_func[slot] = shared_main_ram_writer;
-#ifdef			MEM_USE_DATA_POINTERS
-			mem_slot_rd_data[slot] = main_ram + addr;	// NOTE: writing does NOT have data pointer, as it requires special care
-#endif
 			break;
 		case MEM_SLOT_TYPE_COLOUR_RAM:
 			mem_slot_rd_func[slot] = colour_ram_reader;
 			mem_slot_wr_func[slot] = addr >= 0x0FF80800U ? colour_ram_writer : shared_colour_ram_writer;
 #ifdef			MEM_USE_DATA_POINTERS
-			mem_slot_rd_data[slot] = colour_ram + addr - 0x0FF80000U;
+			// (no data pointer for reading: a read takes wait states, the reader counts them)
 			if (addr >= 0x0FF80800U)	// the first 2K of colour RAM is "shared" thus we don't set data pointer for that: allow the write callback to do that (special case!)
 				mem_slot_wr_data[slot] = colour_ram + addr - 0x0FF80000U;
 #endif
 			break;
 		case MEM_SLOT_TYPE_ATTIC_RAM:
+			// (no data pointers: every access takes wait states, the reader and the writer count them)
 			mem_slot_rd_func[slot] = attic_ram_reader;
 			mem_slot_wr_func[slot] = attic_ram_writer;
-#ifdef			MEM_USE_DATA_POINTERS
-			mem_slot_rd_data[slot] = mem_slot_wr_data[slot] = attic_ram + addr - 0x08000000U;
-#endif
 			break;
 		case MEM_SLOT_TYPE_HYPERVISOR_RAM:
 			if (XEMU_LIKELY(in_hypervisor || slot == MEM_SLOT_SDEBUG)) {
@@ -526,8 +565,7 @@ static void resolve_linear_slot ( const Uint32 slot, const Uint32 addr )
 			mem_slot_rd_func[slot] = eth_buffer_reader;
 			mem_slot_wr_func[slot] = eth_buffer_writer;
 #ifdef			MEM_USE_DATA_POINTERS
-			mem_slot_rd_data[slot] = eth_rx_buf + addr - 0xFFDE800U;
-			mem_slot_wr_data[slot] = eth_tx_buf + addr - 0xFFDE800U;
+			mem_slot_wr_data[slot] = eth_tx_buf + addr - 0xFFDE800U;	// (reading: by the reader, which counts its wait state)
 #endif
 			break;
 		case MEM_SLOT_TYPE_OPL3:
@@ -550,7 +588,7 @@ static void resolve_linear_slot ( const Uint32 slot, const Uint32 addr )
 			mem_slot_rd_func[slot] = char_ram_reader;
 			mem_slot_wr_func[slot] = char_ram_writer;
 #ifdef			MEM_USE_DATA_POINTERS
-			mem_slot_rd_data[slot] = mem_slot_wr_data[slot] = char_ram + addr - 0xFF7E000U;
+			mem_slot_wr_data[slot] = char_ram + addr - 0xFF7E000U;	// (reading: by the reader, which counts its wait states)
 #endif
 			break;
 		case MEM_SLOT_TYPE_1541_RAM:

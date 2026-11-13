@@ -115,6 +115,7 @@ void machine_set_speed ( int verbose )
 	speed_wanted = (in_hypervisor || (D6XX_registers[0x7D] & 16)) ? 7 : ((((c128_d030_reg & 1) ^ C128_SPEED_BIT_BUG) << 2) | ((vic_registers[0x31] & 64) >> 5) | ((vic_registers[0x54] & 64) >> 6));
 	// videostd_changed: we also want to force recalulation if PAL/NTSC change happened, even if the speed setting remains the same!
 	if (speed_wanted != speed_current || videostd_changed) {
+		mega65_cia_sync();	// (the cycles so far were at the speed, and the CIAs' rate, before)
 		speed_current = speed_wanted;
 		videostd_changed = 0;
 		switch (speed_wanted) {
@@ -146,6 +147,7 @@ void machine_set_speed ( int verbose )
 		}
 		DEBUG("SPEED: CPU speed is set to %s, cycles per scanline: %d in %s (1MHz cycles per scanline: %f)" NL, cpu_clock_speed_string_p, cpu_cycles_per_scanline, videostd_name, videostd_1mhz_cycles_per_scanline);
 		mcp65_set_cpu_speed((double)cpu_cycles_per_scanline / (double)videostd_1mhz_cycles_per_scanline);
+		mem_wait_on = (speed_wanted == 1 || speed_wanted == 3 || speed_wanted == 7);	// memory wait states (memory_mapper.c) are known, and emulated, for the full speed only
 		if (cpu_cycles_per_step > 1 && !hypervisor_is_debugged && !configdb.cpusinglestep)
 			cpu_cycles_per_step = cpu_cycles_per_scanline;	// if in trace mode (or hyper-debug ...), do not set this! So set only if non-trace and non-hyper-debug
 	}
@@ -706,6 +708,40 @@ static void update_emulator_paused ( void )
 }
 
 
+// The CIAs' timers brought up to the cycle the CPU (or the DMA) is at. Once a scanline was all they got
+// (64 usec): a program that reads a timer, or starts and stops one, saw time in steps of that. Now also
+// before every access to a CIA (io_mapper.c), so what a program reads is the timer as of that cycle.
+// (A timer's interrupt is still noticed only at such a moment.)
+static double cia_ticks_due = 0.0;
+
+void mega65_cia_sync ( void )
+{
+	static Uint64 cycles_seen = 0;
+	const Uint64 now = cpu65.cycles_done + (Uint64)cpu65.op_cycles + dma_cycles_done;
+	if (now <= cycles_seen || !cpu_cycles_per_scanline)
+		return;
+	cia_ticks_due += (double)(now - cycles_seen) * cia_ticks_per_scanline / (double)cpu_cycles_per_scanline;
+	cycles_seen = now;
+	const int whole = (int)cia_ticks_due;
+	if (whole >= 1) {
+		cia_tick(&cia1, whole);
+		cia_tick(&cia2, whole);
+		cia_ticks_due -= (double)whole;
+	}
+}
+
+
+// Once a video frame the CIAs get no ticks for the time of one scanline. The MEGA65 hands their clock out
+// as a number of ticks for every two scanlines (63 in PAL, 65 in NTSC: a C64's raster), and its frame has
+// an odd number of them: one gets none. Measured on a MEGA65 R6 (build/tests/timing-m65): 31.2 ticks a
+// frame less than the nominal 19656 in PAL, 32.1 less than 17095 in NTSC.
+static void cia_frame_step ( void )
+{
+	mega65_cia_sync();
+	cia_ticks_due -= cia_ticks_per_scanline;
+}
+
+
 static void emulation_loop ( void )
 {
 	static int cycles = 0;	// used for "balance" CPU cycles per scanline, must be static!
@@ -799,17 +835,11 @@ static void emulation_loop ( void )
 		);	// FIXME: this is maybe not correct, that DMA's speed depends on the fast/slow clock as well?
 		if (cycles >= cpu_cycles_per_scanline) {
 			cycles -= cpu_cycles_per_scanline;
-			static double cia_ticks_fp = 0.0;
-			cia_ticks_fp += cia_ticks_per_scanline;
-			const int cia_ticks_now_int = (int)cia_ticks_fp;
-			if (XEMU_LIKELY(cia_ticks_now_int >= 1)) {
-				// DEBUGPRINT("CIA tick: %d" NL, cia_ticks_now_int);
-				cia_tick(&cia1, cia_ticks_now_int);
-				cia_tick(&cia2, cia_ticks_now_int);
-				cia_ticks_fp -= (double)cia_ticks_now_int;
-			}
-			if (XEMU_UNLIKELY(vic4_render_scanline()))
+			mega65_cia_sync();
+			if (XEMU_UNLIKELY(vic4_render_scanline())) {
+				cia_frame_step();
 				break;	// break the (main, "for") loop, if frame is over!
+			}
 		}
 	}
 #ifdef	XEMU_ARCH_HTML

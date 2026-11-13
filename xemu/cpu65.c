@@ -122,8 +122,10 @@ static XEMU_INLINE Uint32 AXYZ_SET ( const Uint32 val ) {
 #ifdef MEGA65
 #include "xemu/cpu65_mega65_timings.h"
 static int BRANCH8_COST = 1;
+static int BRANCH8_PAGE_COST = 1;	// a taken 8-bit branch to another page: no cycle more at the MEGA65's full speed (measured)
 #else
 #define BRANCH8_COST 1
+#define BRANCH8_PAGE_COST 1
 #endif
 
 #ifdef CPU_65CE02
@@ -143,18 +145,21 @@ static int BRANCH8_COST = 1;
 					opcycles = opcycles_slow_mode;
 #					ifdef MEGA65
 					BRANCH8_COST = 1;
+					BRANCH8_PAGE_COST = 1;
 #					endif
 					break;
 				default:
 					opcycles = opcycles_fast_mode;
 #					ifdef MEGA65
 					BRANCH8_COST = 1;
+					BRANCH8_PAGE_COST = 1;
 #					endif
 					break;
 #				ifdef MEGA65
 				case 2:
 					opcycles = opcycles_ultra_mode;
 					BRANCH8_COST = 2;
+					BRANCH8_PAGE_COST = 0;
 					break;
 #				endif
 			}
@@ -507,7 +512,7 @@ static XEMU_INLINE void _BRA ( const int cond, const int extra_cycles_if_taken )
 		int temp = readByte(CPU65.pc);
 		if (temp & 128) temp = CPU65.pc - (temp ^ 0xFF);
 		else temp = CPU65.pc + temp + 1;
-		if ((temp & 0xFF00) != (CPU65.pc & 0xFF00)) CPU65.op_cycles++;
+		if ((temp & 0xFF00) != (CPU65.pc & 0xFF00)) CPU65.op_cycles += BRANCH8_PAGE_COST;
 		CPU65.pc = temp;
 		CPU65.op_cycles += extra_cycles_if_taken;
 	} else
@@ -2838,6 +2843,9 @@ int cpu65_step (
 	// this with the label too, must be after the opcode big switch/case stuff!!!!
 	CPU65.prefix = PREFIX_NOTHING;
 do_not_clear_prefix:
+#endif
+#ifdef CPU65_OP_END_HOOK
+	CPU65_OP_END_HOOK();	// (the target's: cycles this opcode took beyond the table's)
 #endif
 	CPU65.cycles_done += CPU65.op_cycles;
 #ifdef CPU_STEP_MULTI_OPS

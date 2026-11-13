@@ -65,6 +65,14 @@ static Uint8 filler_byte;		// byte used for FILL DMA command only
 static int   enhanced_mode;		// MEGA65 enhanced mode DMA
 static int   with_io;			// legacy MEGA65 stuff, should be removed? 0x80 or 0
 static unsigned int list_entry_pos = 0;
+static bool  first_entry;		// the list entry being read is the first of this DMA session (not a chained one)
+static int   job_bytes;			// bytes the job has done so far
+// What a job takes beyond a cycle for each byte of its list and the cycles of its bytes, at the MEGA65's
+// full speed: measured on a MEGA65 R6 (core 0.97) with build/tests/timing-m65.
+#define DMA_CYCLES_START	1	// a DMA session
+#define DMA_CYCLES_ENTRY	2	// each entry of its list
+#define DMA_CYCLES_NOT_FILL	2	// a job that reads (copy; mix and swap taken to be the same): it seems to read its first
+					// byte twice, as the wait states of the memory it reads come on top once more
 static bool  mb_cross_global = false;	// allow to cross megabyte boundary
 static bool  mb_cross;			// (same as above, for the current session though)
 
@@ -220,13 +228,6 @@ static XEMU_INLINE void address_stepping ( struct dma_channel_st *const channel 
 }
 
 
-static XEMU_INLINE void copy_next ( void )
-{
-	dma_write_target(dma_read_source());
-	address_stepping(&source);
-	address_stepping(&target);
-}
-
 static XEMU_INLINE void fill_next ( void )
 {
 	dma_write_target(filler_byte);
@@ -359,6 +360,7 @@ void dma_write_reg ( int addr, Uint8 data )
 		DEBUGDMA("DMA: initiation of normal mode DMA\n");
 	DEBUGDMA("DMA: list address is $%07X (%s) now, just written to register %d value $%02X @ PC=$%04X" NL, list_addr, list_addr_policy ? "CPU-addr" : "linear-addr", addr, data, cpu65.pc);
 	in_dma = 0x80;		// DMA is busy now, also to signal the emulator core to call dma_update() in its main loop
+	first_entry = true;
 	command = -1;		// signal dma_update() that it's needed to fetch the DMA command, no command is fetched yet
 	cpu65.multi_step_stop_trigger = 1;	// trigger stopping multi-op CPU emulation mode, otherwise DMA wouldn't be started when it should be, right after triggering!
 }
@@ -387,6 +389,9 @@ int dma_update ( void )
 			DEBUGDMA("DMA: adjusting list addr to CPU PC: $%04X" NL, list_addr);
 			list_addr_policy = 2;
 		}
+		cycles += DMA_CYCLES_ENTRY + (first_entry ? DMA_CYCLES_START : 0);
+		first_entry = false;
+		job_bytes = 0;
 		if (enhanced_mode) {
 			list_entry_pos = 0;
 			for (;;) {
@@ -550,8 +555,10 @@ int dma_update ( void )
 		// On MEGA65, modulo is used as a fixed point arithmetic value
 		modulo.value       = dma_read_list_next_byte() <<  8;
 		modulo.value      |= dma_read_list_next_byte() << 16;
+		if (dma_op != FILL_OP)
+			cycles += DMA_CYCLES_NOT_FILL;
 		if (session_revision) {
-			cycles += 12;	// FIXME: correct timing?
+			cycles += 12;	// (a cycle for each byte of the list entry)
 			// F018B ("new") behaviour
 			source.step = calculate_skip_rate(subcommand & 2, command & 16, source.step_int, source.step_fract);
 			target.step = calculate_skip_rate(subcommand & 8, command & 32, target.step_int, target.step_fract);
@@ -565,7 +572,7 @@ int dma_update ( void )
 				minterms[3] = (subcommand & 128) ? 0xFF : 0x00;
 			}
 		} else {
-			cycles += 11;	// FIXME: correct timing?
+			cycles += 11;
 			// F018A ("old") behaviour
 			source.step = calculate_skip_rate(source.addr & 0x100000, source.addr & 0x400000, source.step_int, source.step_fract);
 			target.step = calculate_skip_rate(target.addr & 0x100000, target.addr & 0x400000, target.step_int, target.step_fract);
@@ -642,11 +649,29 @@ int dma_update ( void )
 	}
 	// We have valid command to be executed, or continue to execute
 	//DEBUG("DMA: EXECUTING: command=%d length=$%04X" NL, command & 3, length);
+	// A byte takes 2 cycles to copy and 1 to fill (measured: chip RAM, ROM, I/O, colour RAM as the
+	// target), and the wait states of the memory it is read from (memory_mapper.c counts them into
+	// mem_wait_q4). The attic RAM is slower still when it is copied to: a fill takes 4.4 cycles a byte,
+	// a copy from the attic RAM itself 26.7, and a copy from elsewhere 5.4 for its first 64 bytes and 9.7
+	// from then on (it seems to write into a buffer that is then full).
 	switch (dma_op) {
-		case COPY_OP:		// COPY command (0)
-			copy_next();
-			cycles = 2;	// FIXME: correct timing?
+		case COPY_OP: {		// COPY command (0)
+			if ((DMA_ADDRESSING(target) & 0xFF00000U) == 0x8000000U) {
+				if ((DMA_ADDRESSING(source) & 0xFF00000U) == 0x8000000U)
+					mem_wait_q4 += 108;
+				else if (job_bytes >= 64)
+					mem_wait_q4 += 68;
+			}
+			const int before = mem_wait_q4;
+			const Uint8 data = dma_read_source();
+			if (!job_bytes)
+				mem_wait_q4 += mem_wait_q4 - before;	// (the first read's wait states twice)
+			dma_write_target(data);
+			address_stepping(&source);
+			address_stepping(&target);
+			cycles = 2;
 			break;
+		}
 		case MIX_OP:		// MIX  command (1)
 			mix_next();
 			cycles = 3;	// FIXME: correct timing?
@@ -657,8 +682,16 @@ int dma_update ( void )
 			break;
 		case FILL_OP:		// FILL command (3)
 			fill_next();
-			cycles = 1;	// FIXME: correct timing?
+			cycles = 1;
 			break;
+	}
+	if (!job_bytes && dma_op == FILL_OP && (DMA_ADDRESSING(target) & 0xFF00000U) == 0x8000000U)
+		mem_wait_q4 = 0;	// (a fill's first byte into the attic RAM does not wait)
+	job_bytes++;
+	if (mem_wait_q4 >= 16) {
+		if (mem_wait_on)
+			cycles += mem_wait_q4 >> 4;
+		mem_wait_q4 &= 15;
 	}
 	// Maintain length counter or modulo-related counters (in the second case, also add modulo value if needed)
 	if (XEMU_UNLIKELY(modulo.used)) {
