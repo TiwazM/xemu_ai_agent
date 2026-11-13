@@ -1,0 +1,190 @@
+name: M65-MCP builds
+
+# Xemu's MEGA65 emulator with the M65-MCP mathematics coprocessor in it
+# (targets/mega65/mcp65-model/README.md), built for Linux, Windows and MacOS
+# from the mcp branch, and put on this repository's releases page.
+#
+# The upstream's own workflow (main.yml) is for the upstream's branches and
+# its download page; this one stands beside it and builds the MEGA65 emulator
+# only, the way that one does.
+
+on:
+  push:
+    branches:
+      - mcp
+  workflow_dispatch:
+
+permissions:
+  contents: write        # (the release)
+
+jobs:
+  linux:
+    name: Linux
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Ubuntu packages
+        run: |
+          sudo apt-get -y -yq update || true
+          sudo apt-get -y -yq --no-install-suggests --no-install-recommends install bash build-essential bzip2 coreutils curl file gawk gcc libc6-dev libcurl4-openssl-dev libgtk-3-dev libreadline-dev libsdl2-dev make sed tar vim-common wget zip
+
+      - name: Configure Xemu
+        run: make RELEASE=yes config
+
+      - name: Build the MEGA65 emulator
+        run: make -C targets/mega65 -j 4 RELEASE=yes
+
+      - name: The MCP's unit against its reference model
+        run: |
+          cc -std=gnu11 -O2 -Wall -o /tmp/unit_script targets/mega65/mcp65-model/unit_script.c targets/mega65/mcp65_unit.c targets/mega65/mcp65_model.c targets/mega65/mcp65_softfloat.c
+          printf 'W 107 00\nW 195 02\nW 18A 00\nI\nR 400 F3\nR 401 04\nR 402 B5\nR 403 3F\nO\nA\n' > /tmp/smoke.txt
+          /tmp/unit_script /tmp/smoke.txt
+
+      - name: Strip and test run
+        run: |
+          strip build/bin/xmega65.native
+          ls -l build/bin/xmega65.native
+          build/bin/xmega65.native -h || true
+
+      - name: Package
+        run: |
+          d=xemu-mcp-linux-x86_64
+          mkdir $d
+          cp build/bin/xmega65.native $d/xmega65
+          cp README.md LICENSE AUTHORS $d/
+          cp targets/mega65/mcp65-model/README.md $d/M65-MCP.md
+          cp targets/mega65/mcp65-model/SoftFloat-COPYING.txt $d/
+          tar czf $d.tar.gz $d
+          ls -l $d.tar.gz
+
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: xemu-mcp-linux-x86_64.tar.gz
+          if-no-files-found: error
+
+
+  windows:
+    name: Windows (built on Linux)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Ubuntu packages
+        run: |
+          sudo apt-get -y -yq update || true
+          sudo apt-get -y -yq --no-install-suggests --no-install-recommends install bash binutils-mingw-w64-i686 binutils-mingw-w64-x86-64 build-essential bzip2 coreutils curl file gawk gcc-mingw-w64-i686 gcc-mingw-w64-x86-64 make sed tar vim-common wget zip
+
+      - name: Install Windows SDL2 cross-development components
+        run: build/install-cross-win-mingw-sdl-on-linux.sh /usr/bin
+
+      - name: Configure Xemu
+        run: make RELEASE=yes ARCH=win64 config
+
+      - name: Build the MEGA65 emulator
+        run: make -C targets/mega65 -j 4 RELEASE=yes ARCH=win64
+
+      - name: Strip
+        run: |
+          x86_64-w64-mingw32-strip build/bin/xmega65.win64
+          ls -l build/bin/xmega65.win64
+
+      - name: Package
+        run: |
+          rm -f build/bin/*.dll
+          cp README.md LICENSE AUTHORS `x86_64-w64-mingw32-sdl2-config --prefix`/bin/*.dll build/bin/
+          cp targets/mega65/mcp65-model/README.md build/bin/M65-MCP.md
+          cp targets/mega65/mcp65-model/SoftFloat-COPYING.txt build/bin/
+          build/zipper.sh build/bin xemu-mcp-windows-x64.zip build/bin/*.dll build/bin/xmega65.win64 README.md LICENSE AUTHORS M65-MCP.md SoftFloat-COPYING.txt
+          cp build/bin/xemu-mcp-windows-x64.zip .
+          unzip -l xemu-mcp-windows-x64.zip
+
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: xemu-mcp-windows-x64.zip
+          if-no-files-found: error
+
+
+  macos:
+    name: MacOS (Intel and Apple silicon)
+    runs-on: macos-15-intel
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install build dependencies
+        run: build/install-dependencies-osx-v2.sh
+
+      - name: Configure Xemu
+        run: make RELEASE=yes MACMINVER=10.9 MACDUALISA=yes config
+
+      - name: Build the MEGA65 emulator
+        run: make -C targets/mega65 -j 4 RELEASE=yes MACMINVER=10.9 MACDUALISA=yes
+
+      - name: Mangle, strip and test run
+        run: |
+          build/mangle_dylib_osx.sh build/bin/xmega65.native
+          strip build/bin/xmega65.native
+          ls -l build/bin/xmega65.native build/bin/*.dylib
+          lipo -info build/bin/xmega65.native build/bin/*.dylib
+          build/bin/xmega65.native -h || true
+
+      - name: Package
+        run: |
+          cp README.md LICENSE AUTHORS build/bin/
+          cp targets/mega65/mcp65-model/README.md build/bin/M65-MCP.md
+          cp targets/mega65/mcp65-model/SoftFloat-COPYING.txt build/bin/
+          build/zipper.sh build/bin xemu-mcp-macos-universal.zip build/bin/*.dylib build/bin/xmega65.native README.md LICENSE AUTHORS M65-MCP.md SoftFloat-COPYING.txt
+          cp build/bin/xemu-mcp-macos-universal.zip .
+          unzip -l xemu-mcp-macos-universal.zip
+
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: xemu-mcp-macos-universal.zip
+          if-no-files-found: error
+
+
+  release:
+    name: Release
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Fetch the three builds
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -l dist
+          stamp=`TZ=UTC git log -1 --format=%cd --date=format-local:%Y%m%d-%H%M%S`
+          tag="mcp-$stamp"
+          cat > notes.md <<EOF
+          Xemu's MEGA65 emulator with the **M65-MCP** mathematics coprocessor in it, built from the \`mcp\` branch at commit [\`${GITHUB_SHA:0:8}\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA). What is emulated and how close it is to the hardware: [targets/mega65/mcp65-model/README.md]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$GITHUB_SHA/targets/mega65/mcp65-model/README.md) (\`M65-MCP.md\` in each archive).
+
+          | | |
+          |---|---|
+          | \`xemu-mcp-windows-x64.zip\` | Windows, 64-bit: unpack, run \`xmega65.exe\` |
+          | \`xemu-mcp-macos-universal.zip\` | MacOS, Intel and Apple silicon: unpack, run \`xmega65\`. It is not signed: \`xattr -dr com.apple.quarantine .\` in its folder once, or right-click and Open |
+          | \`xemu-mcp-linux-x86_64.tar.gz\` | Linux, x86-64 (built on Ubuntu 24.04): needs SDL2 and GTK 3, \`sudo apt install libsdl2-2.0-0 libgtk-3-0\` |
+
+          It is Xemu otherwise, and uses Xemu's own settings and files (a MEGA65 ROM as any Xemu needs). The MCP is at \`\$FFDF000\`; \`-nomcp\` starts without it. This is not an official Xemu build: the upstream's are at https://github.lgb.hu/xemu/.
+          EOF
+          cat notes.md
+          # (a run again on the same commit: the files put in place of the ones there)
+          gh release create "$tag" dist/* --target "$GITHUB_SHA" --prerelease --title "Xemu with the M65-MCP, $stamp" --notes-file notes.md \
+            || gh release upload "$tag" dist/* --clobber
