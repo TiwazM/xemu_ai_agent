@@ -51,6 +51,8 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 #define AUDIO_SAMPLE_FREQ	44100
 
 extern void m65mon_show_regs ( void );
+extern void mega65_cia_sync    ( void );
+extern int  mem_wait_on;
 extern void machine_set_speed ( int verbose );
 
 // no 0 code! bitfields are from 0x100 and above

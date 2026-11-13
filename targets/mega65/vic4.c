@@ -502,7 +502,7 @@ void vic4_open_frame_access ( void )
 			vicii_first_raster = 7;
 			REG_SPRITE_Y_ADJUST = 24;
 			sprite_y_adjust_xemu_bug = 7;
-			cia_ticks_per_scanline = 16568.0 / (double)(PHYSICAL_RASTERS_NTSC);
+			cia_ticks_per_scanline = (27000000.0 * 65.0 / 1716.0) / NTSC_LINE_FREQ;	// the CIAs' clock is 1022727Hz in NTSC (measured on a MEGA65 R6)
 		} else {
 			// --- PAL ---
 			new_name = PAL_STD_NAME;
@@ -513,7 +513,7 @@ void vic4_open_frame_access ( void )
 			vicii_first_raster = 0;
 			REG_SPRITE_Y_ADJUST = 0;
 			sprite_y_adjust_xemu_bug = 0;
-			cia_ticks_per_scanline = 19623.0 / (double)(PHYSICAL_RASTERS_PAL);
+			cia_ticks_per_scanline = (27000000.0 * 63.0 / 1728.0) / PAL_LINE_FREQ;	// and 984375Hz in PAL
 		}
 		DEBUGPRINT("VIC4: switching video standard from %s to %s (1MHz line cycle count is %f, CIA ticks per scanline is %f, frame time is %dusec, max raster is %d, visible area height is %d)" NL,
 			videostd_name, new_name, videostd_1mhz_cycles_per_scanline, cia_ticks_per_scanline, videostd_frametime, max_rasters, visible_area_height

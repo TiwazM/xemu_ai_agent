@@ -50,7 +50,7 @@
 #define MEGA_FOP_NEG_NEG_6A_CYCLES 2	// RORQ Q (NEG NEG prefixed)     4 cycs total (+1)
 #define MEGA_FOP_NEG_NEG_6D_CYCLES 10	// ADCQ $nnnn (NEG NEG prefixed)     12 cycs total (+5)
 #define MEGA_FOP_NEG_NEG_6E_CYCLES 16	// RORQ $nnnn (NEG NEG prefixed)     18 cycs total (+9)
-#define MEGA_FOP_NOP_72_CYCLES 13	// ADC  [$nn],Z (NOP prefixed)         14 cycs total (+6)
+#define MEGA_FOP_NOP_72_CYCLES 9	// ADC  [$nn],Z (NOP prefixed)         10 cycs total (+2)   [measured on a MEGA65 R6, core 0.97: build/tests/timing-m65]
 #define MEGA_FOP_NEG_NEG_72_CYCLES 12	// ADCQ ($nn) (NEG NEG prefixed)     14 cycs total (+5)
 #define MEGA_FOP_NEG_NEG_NOP_72_CYCLES 14	// ADCQ [$nn] (NEG NEG NOP prefixed) 17 cycs total (+7)
 #define MEGA_FOP_NEG_NEG_76_CYCLES 15	// RORQ $nn,X (NEG NEG prefixed)     17 cycs total (+9)
@@ -62,7 +62,7 @@
 #define MEGA_FOP_NEG_NEG_NOP_92_CYCLES 12	// STQ  [$nn] (NEG NEG NOP prefixed) 15 cycs total (+6)
 #define MEGA_FOP_NEG_NEG_A5_CYCLES 8	// LDQ  $nn (NEG NEG prefixed)     10 cycs total (+4)
 #define MEGA_FOP_NEG_NEG_AD_CYCLES 9	// LDQ  $nnnn (NEG NEG prefixed)     11 cycs total (+4)
-#define MEGA_FOP_NOP_B2_CYCLES 12	// LDA  [$nn],Z (NOP prefixed)         13 cycs total (+5)
+#define MEGA_FOP_NOP_B2_CYCLES 9	// LDA  [$nn],Z (NOP prefixed)         10 cycs total (+2)   [measured, as above]
 #define MEGA_FOP_NEG_NEG_B2_CYCLES 11	// LDQ  ($nn),Z (NEG NEG prefixed)     13 cycs total (+4)
 #define MEGA_FOP_NEG_NEG_NOP_B2_CYCLES 13	// LDQ  [$nn],Z (NEG NEG NOP prefixed) 16 cycs total (+6)
 #define MEGA_FOP_NEG_NEG_B9_CYCLES 9	// LDQ  $nnnn,Y (NEG NEG prefixed)     TODO: what the situation here exactly??

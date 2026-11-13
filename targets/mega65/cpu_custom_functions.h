@@ -43,6 +43,20 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 extern Uint32 ref_slot;
 
+// What an access costs beyond the opcode table's (or the DMA's) cycles, because of the kind of memory it
+// hits: at its full speed the MEGA65 reads chip RAM and ROM at once, and everything else with wait states
+// (memory_mapper.c has the list). The memory's readers and writers add to it, in 1/16 cycles; the CPU
+// takes the whole cycles at the end of the opcode, the DMA after each of its steps.
+extern int mem_wait_q4;
+extern int mem_wait_on;		// the CPU is at its full speed: they count (else they are thrown away)
+#define CPU65_OP_END_HOOK() do { \
+		if (XEMU_UNLIKELY(mem_wait_q4 >= 16)) { \
+			if (XEMU_LIKELY(mem_wait_on)) \
+				CPU65.op_cycles += mem_wait_q4 >> 4; \
+			mem_wait_q4 &= 15; \
+		} \
+	} while (0)
+
 typedef Uint8 (*mem_slot_rd_func_t)(const Uint32 addr32);
 typedef void  (*mem_slot_wr_func_t)(const Uint32 addr32, const Uint8 data);
 
