@@ -17,3 +17,10 @@ Testing ethernet emulation of Xemu/Mega65. This piece of code should run on
 a real M65 as well. It does ARP reply, ICMP echo request reply (ping), custom
 UDP based "monitor port", TFTP server and DHCP client. The status of the project
 can be checked on the link above, though.
+
+## timing-m65
+
+How many cycles things take on a real MEGA65 at 40.5 MHz (every opcode, the
+same instructions against each kind of memory, the hardware divider, DMA
+jobs, the CIAs' clock), measured with a test program that runs the same in
+Xemu, and the two laid side by side. See `timing-m65/README.md`.
