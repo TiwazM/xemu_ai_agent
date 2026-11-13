@@ -62,7 +62,7 @@ void (*m65mon_callback)(void) = NULL;
 int breakpoint_pc = -1;
 int watchpoint_addr = -1;
 int watchpoint_val = -1;
-// --- Monitor extensions for automated testing / AI agents (~frames, ~joy, ~shot, ~sleepless, ~mem) ---
+// --- Monitor extensions for automated testing / AI agents (~frames, ~joy, ~shot, ~sleepless, ~mem, ~load) ---
 int   umon_frames_left = 0;			// >0: run this many frames, then pause and answer
 Uint8 umon_joy_mask[2] = { 0xFF, 0xFF };	// active-low joystick override masks for port 1 and 2
 static int   umon_shot_pending = 0;
@@ -457,6 +457,25 @@ static void execute_command ( char *cmd )
 						*p++ = hexd[b & 15];
 					}
 					umon_write_size = p - umon_write_buffer;
+				}
+			} else if (!strncmp(cmd, "load", 4)) {
+				// ~load ADDR PATH : the host's file PATH into memory from 28-bit ADDR, at once (the monitor's
+				// own way is 16 bytes a command, a command a frame: 5 minutes for 240K); answers with its size
+				cmd = parse_hex_arg(cmd + 4, &par1, 0, 0xFFFFFFF);
+				if (cmd) {
+					while (*cmd == 32)
+						cmd++;
+					FILE *f = *cmd ? fopen(cmd, "rb") : NULL;
+					if (f) {
+						int n = 0, c;
+						while (n < 0x1000000 && (c = fgetc(f)) != EOF) {
+							Uint8 b = (Uint8)c;
+							m65mon_setmem28((par1 + n++) & 0xFFFFFFF, 1, &b);
+						}
+						fclose(f);
+						umon_printf("LOADED %X", n);
+					} else
+						umon_printf(UMON_SYNTAX_ERROR "no file name, or the file cannot be opened");
 				}
 			} else if (!strncmp(cmd, "mapping", 7)) {
 				char desc[10];
