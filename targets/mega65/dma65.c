@@ -35,6 +35,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 #endif
 
 Uint8 in_dma;	// DMA session is in progress if non-zero. Also used by the main emu loop to tell if it needs to call DMA or CPU emu.
+Uint64 dma_cycles_done = 0;
 
 // Hacky stuff:
 // low byte: the transparent byte value
@@ -716,7 +717,9 @@ int dma_update_multi_steps ( const int do_for_cycles )
 {
 	int cycles = 0;
 	while (cycles <= do_for_cycles && in_dma) {
-		cycles += dma_update();
+		const int step = dma_update();
+		cycles += step;
+		dma_cycles_done += step;
 	}
 	return cycles;
 }
