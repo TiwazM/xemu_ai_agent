@@ -67,19 +67,19 @@ on the board and here, down to how many of 64 divides survive (29).
 
 What is not the hardware's:
 
-- **The CPU's and the DMA's own cycle counts are Xemu's.** They are near
-  the MEGA65's for the instructions that talk to the unit (a register form
-  9 cycles on both; `LDQ [zp]` 18 here, 26 there), so times measured in
-  Xemu are near the board's, not equal: the Mandelbrot demo 1.78 s on
-  both, the standard vertex program 90.7 clocks a vertex here, 89.7 there.
+- **The CPU's and the DMA's cycle counts are Xemu's**, which this branch
+  has brought in line with a MEGA65 R6 (`build/tests/timing-m65`: every
+  opcode, the wait states of each kind of memory, DMA jobs, the CIAs'
+  clock). With that, times measured in Xemu are the board's to the last
+  digit it prints: the Mandelbrot demo 1.78 s on both, the standard vertex
+  program 89.7 clocks a vertex on both, the torus demo 19.51 ms a frame
+  here and 19.5 there. The other CPU speeds are as Xemu had them.
 - **An access is placed at the end of its instruction**, a few cycles
   late for the first byte of an `LDQ`.
 - **A value on its way is not shown piece by piece.** The hardware's
   pipelines are not simulated: a register reads old until its result is
   in, then new; a sequence's results (a vector or matrix command) appear
   together at its end, as in the hardware.
-- **Xemu's CIA timers tick once a raster line**, so a time measured with
-  them is in steps of 64 µs.
 - A machine reset does not reset the unit, as on a MEGA65 (the unit has
   no reset line: MRESET does it, and nothing but loading the core again
   clears its three memories). The monitor's `~mcpinit` does the latter.
