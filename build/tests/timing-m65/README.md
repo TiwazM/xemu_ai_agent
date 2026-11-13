@@ -83,12 +83,30 @@ the longest kept, because of the last point below.
   RAM is 18 cycles after the write that starts it. The attic RAM is slower
   and uneven: 4.4 cycles a byte for a fill, 16.5 for a copy from it, 9.7
   for a copy to it after its first 64 bytes, 26.7 within it.
-- **The CIAs' clock loses one raster line's ticks every video frame.** The
-  machine hands the clock out as 63 (PAL) or 65 (NTSC) ticks for every two
-  raster lines, and its frame has an odd number of lines. Measured: 31.2
-  ticks a frame less than the nominal 19,656 in PAL, 32.1 less than 17,095
-  in NTSC. Within a frame the clock is exact; a time taken over many frames
-  comes out 0.16% (PAL) or 0.19% (NTSC) short.
+- **The CIAs' clock loses one raster line's ticks every video frame.**
+  Measured: 31.2 ticks a frame less than the nominal 19,656 in PAL, 32.1
+  less than 17,095 in NTSC. The machine's own count of them (`$D7F2-$D7F5`
+  read in C64 mode) says the same: 19,624 or 19,625, and 17,062 or 17,063.
+  Within a frame the clock is exact; a time taken over many frames comes
+  out 0.16% (PAL) or 0.19% (NTSC) short.
+
+  It is the core's `frame_generator.vhdl`, which makes the 1 MHz clock (the
+  CIAs', and the CPU's in C64 mode). It hands the clock out as a budget of
+  63 (PAL) or 65 (NTSC) ticks for every two raster lines, filled up again
+  only if it is used up when a line reaches a certain point, and the ticks
+  come a little faster than needed so that it always is. But the ticks'
+  accumulator is set to 0 at the start of every frame; the budget running
+  then finishes a few clocks late, is not filled, and the clock stands
+  still for a line. A PAL frame is 624 lines there (808,704 cycles of
+  40.5 MHz by the machine's `$D7F2` at full speed), so it is not the
+  frame's length.
+
+  This is the PAL figure of mega65-core's issue 816 ("CIA timing incorrect
+  and/or inaccurate", open): 0.982721 MHz there, 0.98281 MHz here. The NTSC
+  half of that issue was another thing, 63 ticks for a raster instead of
+  65 (0.9911 MHz), fixed in the core in November 2025 (c26aec0c0). The core
+  measured here has that fix; release 0.97 has not, and counts 3% slower
+  in NTSC.
 
 ## Where Xemu stands
 
@@ -100,9 +118,10 @@ attic RAM, which is uneven on the machine itself. All of them are within
 0.4%.
 
 Before them (the same Xemu a day earlier): the CIAs counted once a raster
-line, at 0.17% (PAL) and 3.1% (NTSC) less than the machine's rate; reads of
-anything but chip RAM were a cycle or more too fast; the divider was never
-busy; and a DMA job was 3 to 5 cycles short. A real program shows what that
+line (their rate over many frames was the machine's in PAL, and in NTSC
+that of a core before November 2025: see above); reads of anything but
+chip RAM were a cycle or more too fast; the divider was never busy; and a
+DMA job was 3 to 5 cycles short. A real program shows what that
 adds up to: the M65-MCP's torus demo, which draws with many small DMA fills,
 took 18.72 ms a frame in Xemu and 19.5 ms on the MEGA65; it now takes 19.51.
 

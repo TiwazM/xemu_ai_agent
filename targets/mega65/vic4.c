@@ -502,7 +502,7 @@ void vic4_open_frame_access ( void )
 			vicii_first_raster = 7;
 			REG_SPRITE_Y_ADJUST = 24;
 			sprite_y_adjust_xemu_bug = 7;
-			cia_ticks_per_scanline = (27000000.0 * 65.0 / 1716.0) / NTSC_LINE_FREQ;	// the CIAs' clock is 1022727Hz in NTSC (measured on a MEGA65 R6)
+			cia_ticks_per_scanline = (27000000.0 * 65.0 / 1716.0) / NTSC_LINE_FREQ;	// the CIAs' clock is 1022727Hz in NTSC: 65 ticks for two scanlines, as a core since November 2025 has it (mega65-core #816; before, and in release 0.97: 63). mega65.c takes a scanline's ticks off each frame.
 		} else {
 			// --- PAL ---
 			new_name = PAL_STD_NAME;

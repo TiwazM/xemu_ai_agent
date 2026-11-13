@@ -728,9 +728,13 @@ void mega65_cia_sync ( void )
 
 
 // Once a video frame the CIAs get no ticks for the time of one scanline. The MEGA65 hands their clock out
-// as a number of ticks for every two scanlines (63 in PAL, 65 in NTSC: a C64's raster), and its frame has
-// an odd number of them: one gets none. Measured on a MEGA65 R6 (build/tests/timing-m65): 31.2 ticks a
-// frame less than the nominal 19656 in PAL, 32.1 less than 17095 in NTSC.
+// as a budget of ticks for every two scanlines (63 in PAL, 65 in NTSC: a C64's raster), filled up again
+// only if it is used up when the next scanline comes to a certain point, and it sets the ticks' phase
+// back at the start of every frame (frame_generator.vhdl): the budget running then is not used up in
+// time, and is filled a scanline late. Measured on a MEGA65 R6 (build/tests/timing-m65): 31.2 ticks a
+// frame less than the nominal 19656 in PAL, 32.1 less than 17095 in NTSC; the machine's own count of them
+// ($D7F2 in C64 mode) says 19624 or 19625, and 17062 or 17063. Here: a scanline's ticks less at each
+// frame's end.
 static void cia_frame_step ( void )
 {
 	mega65_cia_sync();
