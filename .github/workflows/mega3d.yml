@@ -51,6 +51,7 @@ jobs:
           cp build/bin/xmega65.native $d/xmega65
           cp README.md LICENSE AUTHORS $d/
           cp build/tests/timing-m65/README.md $d/TIMING.md
+          cp -r targets/mega65/tbdr-model/sdfiles $d/
           tar czf $d.tar.gz $d
           ls -l $d.tar.gz
 
@@ -94,6 +95,7 @@ jobs:
           cp README.md LICENSE AUTHORS `x86_64-w64-mingw32-sdl2-config --prefix`/bin/*.dll build/bin/
           cp build/tests/timing-m65/README.md build/bin/TIMING.md
           build/zipper.sh build/bin xemu-mega3d-windows-x64.zip build/bin/*.dll build/bin/xmega65.win64 README.md LICENSE AUTHORS TIMING.md
+          (cd targets/mega65/tbdr-model && zip -r ../../../build/bin/xemu-mega3d-windows-x64.zip sdfiles)
           cp build/bin/xemu-mega3d-windows-x64.zip .
           unzip -l xemu-mega3d-windows-x64.zip
 
@@ -134,6 +136,7 @@ jobs:
           cp README.md LICENSE AUTHORS build/bin/
           cp build/tests/timing-m65/README.md build/bin/TIMING.md
           build/zipper.sh build/bin xemu-mega3d-macos-universal.zip build/bin/*.dylib build/bin/xmega65.native README.md LICENSE AUTHORS TIMING.md
+          (cd targets/mega65/tbdr-model && zip -r ../../../build/bin/xemu-mega3d-macos-universal.zip sdfiles)
           cp build/bin/xemu-mega3d-macos-universal.zip .
           unzip -l xemu-mega3d-macos-universal.zip
 
@@ -167,7 +170,7 @@ jobs:
           stamp=`TZ=UTC git log -1 --format=%cd --date=format-local:%Y%m%d-%H%M%S`
           tag="mega3d-$stamp"
           cat > notes.md <<EOF
-          Xemu's MEGA65 emulator from the \`mega3d\` branch at commit [\`${GITHUB_SHA:0:8}\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA): upstream Xemu with the MEGA65's timing at full speed as measured on an R6 (opcodes, memory wait states, DMA, the CIAs to the cycle: [build/tests/timing-m65/README.md]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$GITHUB_SHA/build/tests/timing-m65/README.md), \`TIMING.md\` in each archive), the uartmon commands for automated testing, and the **m65tr3d 3D renderer** at \`\$FFDF000\` (the tile renderer with its float converter, indexed vertices and vertex unit, as core YV11; its pictures are the renderer's own C model, the one the hardware is verified against, so Slide programs draw what the board draws; \`-notbdr\` leaves the page undecoded). No M65-MCP.
+          Xemu's MEGA65 emulator from the \`mega3d\` branch at commit [\`${GITHUB_SHA:0:8}\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA): upstream Xemu with the MEGA65's timing at full speed as measured on an R6 (opcodes, memory wait states, DMA, the CIAs to the cycle: [build/tests/timing-m65/README.md]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$GITHUB_SHA/build/tests/timing-m65/README.md), \`TIMING.md\` in each archive), the uartmon commands for automated testing, and the **m65tr3d 3D renderer** at \`\$FFDF000\` (the tile renderer with its float converter, indexed vertices and vertex unit, as core YV11; its pictures are the renderer's own C model, the one the hardware is verified against, so Slide programs draw what the board draws; \`-notbdr\` leaves the page undecoded). The archives' \`sdfiles\` folder (Slide's palette files) goes onto Xemu's SD-card image at every start, so Slide programs need no options; put a program's own files (textures, \`.BNK\`) there too. No M65-MCP.
 
           | | |
           |---|---|

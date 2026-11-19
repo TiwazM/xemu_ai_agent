@@ -1,1 +1,2 @@
 tbdr_model.c, tbdr_model.h: TiwazM/m65tr3d branch tbdr-vu, src/tbdr/model, commit eb4ec83fa (2026-11-17)
+sdfiles/SLIDEPAL.BIN, SLIDEINV.BIN: Slide's default palette and its inverse colour table, from TiwazM/m65tr3d src/slide/build.sh (out/), commit 85ca78e74 (2026-11-19); the release archives carry them in sdfiles/ beside xmega65

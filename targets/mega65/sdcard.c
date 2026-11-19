@@ -475,6 +475,8 @@ retry:
 		} else if (r > MEMCONTENT_VERSION_ID) {
 			INFO_WINDOW("Xemu's signature is too new%s to DOWNgrade", msg);
 		}
+		if (!sd_is_read_only)
+			sdcontent_import_dirs(sdcard_size_in_blocks);	// ("sdfiles" beside Xemu and in its preferences directory)
 	}
 #endif
 	return sdfd;

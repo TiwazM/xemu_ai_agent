@@ -610,6 +610,37 @@ int sdcontent_write_rom_stub ( void )
 
 
 // This function must be called after initializing SDcard, so it's safe for use to call sdcard_read_block() and sdcard_write_block()
+// The files of a folder "sdfiles" beside Xemu's program and of one in its preferences directory, onto the
+// SD-card image's root at every start (overwritten): files a program wants on the card, without -hdosvirt -
+// Slide's SLIDEPAL.BIN and SLIDEINV.BIN for the m65tr3d renderer (tbdr65.c), a program's own textures ...
+int sdcontent_import_dirs ( Uint32 size_in_blocks )
+{
+	const char *bases[2] = { sdl_base_dir, sdl_pref_dir };
+	int checked = 0, ret = 0;
+	for (int i = 0; i < 2; i++) {
+		if (!bases[i] || (i && bases[1] && bases[0] && !strcmp(bases[0], bases[1])))
+			continue;
+		char path[PATH_MAX];
+		snprintf(path, sizeof path, "%s%s", bases[i], SDCONTENT_IMPORT_DIR);
+		DIR *dir = opendir(path);
+		if (!dir)
+			continue;
+		closedir(dir);
+		if (!checked) {
+			sdcontent_handle(size_in_blocks, NULL, 0);	// (finds the data partition, nothing else)
+			checked = 1;
+		}
+		if (our_data_partition < 0) {
+			DEBUGPRINT("SDCARD: CONTENT: no valid data partition, %s not imported" NL, path);
+			return -1;
+		}
+		DEBUGPRINT("SDCARD: CONTENT: importing the files of %s" NL, path);
+		ret |= update_from_directory(path, SDCONTENT_OVERWRITE_FILES);
+	}
+	return ret;
+}
+
+
 int sdcontent_handle ( Uint32 size_in_blocks, const char *update_dir_path, int options )
 {
 	static int init_done = 0;

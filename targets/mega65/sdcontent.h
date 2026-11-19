@@ -20,6 +20,9 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 #define XEMU_MEGA65_SDCONTENT_H_INCLUDED
 #ifdef SD_CONTENT_SUPPORT
 
+// a folder whose files go onto the SD-card image at every start (beside Xemu's program, and in its preferences directory)
+#define SDCONTENT_IMPORT_DIR	"sdfiles"
+
 // You should not use multiple *_FDISK and *_FILES options!
 
 // FORCE fdisk/format whatever the image is valid or not!
@@ -38,6 +41,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 #define SDCONTENT_HDOS_DIR_TOO		64
 
 
+extern int sdcontent_import_dirs ( Uint32 size_in_blocks );
 extern int sdcontent_handle ( Uint32 size_in_blocks, const char *update_dir_path, int options );
 extern int sdcontent_write_rom_stub ( void );
 extern int sdcontent_check_xemu_signature ( void );
