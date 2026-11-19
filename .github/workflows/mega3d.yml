@@ -1,0 +1,183 @@
+name: mega3d builds
+
+# Xemu's MEGA65 emulator from the mega3d branch - upstream Xemu with the
+# measured MEGA65 timing (build/tests/timing-m65/README.md) and the uartmon
+# test commands, without the M65-MCP: the base for emulating the m65tr3d 3D
+# renderer, which sits where the MCP did ($FFDF000) - built for Linux,
+# Windows and MacOS and put on this repository's releases page.
+#
+# The upstream's own workflow (main.yml) is for the upstream's branches and
+# its download page; this one stands beside it and builds the MEGA65 emulator
+# only, the way that one does.
+
+on:
+  push:
+    branches:
+      - mega3d
+  workflow_dispatch:
+
+permissions:
+  contents: write        # (the release)
+
+jobs:
+  linux:
+    name: Linux
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Ubuntu packages
+        run: |
+          sudo apt-get -y -yq update || true
+          sudo apt-get -y -yq --no-install-suggests --no-install-recommends install bash build-essential bzip2 coreutils curl file gawk gcc libc6-dev libcurl4-openssl-dev libgtk-3-dev libreadline-dev libsdl2-dev make sed tar vim-common wget zip
+
+      - name: Configure Xemu
+        run: make RELEASE=yes config
+
+      - name: Build the MEGA65 emulator
+        run: make -C targets/mega65 -j 4 RELEASE=yes
+
+      - name: Strip and test run
+        run: |
+          strip build/bin/xmega65.native
+          ls -l build/bin/xmega65.native
+          build/bin/xmega65.native -h || true
+
+      - name: Package
+        run: |
+          d=xemu-mega3d-linux-x86_64
+          mkdir $d
+          cp build/bin/xmega65.native $d/xmega65
+          cp README.md LICENSE AUTHORS $d/
+          cp build/tests/timing-m65/README.md $d/TIMING.md
+          tar czf $d.tar.gz $d
+          ls -l $d.tar.gz
+
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: xemu-mega3d-linux-x86_64.tar.gz
+          if-no-files-found: error
+
+
+  windows:
+    name: Windows (built on Linux)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Ubuntu packages
+        run: |
+          sudo apt-get -y -yq update || true
+          sudo apt-get -y -yq --no-install-suggests --no-install-recommends install bash binutils-mingw-w64-i686 binutils-mingw-w64-x86-64 build-essential bzip2 coreutils curl file gawk gcc-mingw-w64-i686 gcc-mingw-w64-x86-64 make sed tar vim-common wget zip
+
+      - name: Install Windows SDL2 cross-development components
+        run: build/install-cross-win-mingw-sdl-on-linux.sh /usr/bin
+
+      - name: Configure Xemu
+        run: make RELEASE=yes ARCH=win64 config
+
+      - name: Build the MEGA65 emulator
+        run: make -C targets/mega65 -j 4 RELEASE=yes ARCH=win64
+
+      - name: Strip
+        run: |
+          x86_64-w64-mingw32-strip build/bin/xmega65.win64
+          ls -l build/bin/xmega65.win64
+
+      - name: Package
+        run: |
+          rm -f build/bin/*.dll
+          cp README.md LICENSE AUTHORS `x86_64-w64-mingw32-sdl2-config --prefix`/bin/*.dll build/bin/
+          cp build/tests/timing-m65/README.md build/bin/TIMING.md
+          build/zipper.sh build/bin xemu-mega3d-windows-x64.zip build/bin/*.dll build/bin/xmega65.win64 README.md LICENSE AUTHORS TIMING.md
+          cp build/bin/xemu-mega3d-windows-x64.zip .
+          unzip -l xemu-mega3d-windows-x64.zip
+
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: xemu-mega3d-windows-x64.zip
+          if-no-files-found: error
+
+
+  macos:
+    name: MacOS (Intel and Apple silicon)
+    runs-on: macos-15-intel
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install build dependencies
+        run: build/install-dependencies-osx-v2.sh
+
+      - name: Configure Xemu
+        run: make RELEASE=yes MACMINVER=10.9 MACDUALISA=yes config
+
+      - name: Build the MEGA65 emulator
+        run: make -C targets/mega65 -j 4 RELEASE=yes MACMINVER=10.9 MACDUALISA=yes
+
+      - name: Mangle, strip and test run
+        run: |
+          build/mangle_dylib_osx.sh build/bin/xmega65.native
+          strip build/bin/xmega65.native
+          ls -l build/bin/xmega65.native build/bin/*.dylib
+          lipo -info build/bin/xmega65.native build/bin/*.dylib
+          build/bin/xmega65.native -h || true
+
+      - name: Package
+        run: |
+          cp README.md LICENSE AUTHORS build/bin/
+          cp build/tests/timing-m65/README.md build/bin/TIMING.md
+          build/zipper.sh build/bin xemu-mega3d-macos-universal.zip build/bin/*.dylib build/bin/xmega65.native README.md LICENSE AUTHORS TIMING.md
+          cp build/bin/xemu-mega3d-macos-universal.zip .
+          unzip -l xemu-mega3d-macos-universal.zip
+
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: xemu-mega3d-macos-universal.zip
+          if-no-files-found: error
+
+
+  release:
+    name: Release
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Fetch the three builds
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -l dist
+          stamp=`TZ=UTC git log -1 --format=%cd --date=format-local:%Y%m%d-%H%M%S`
+          tag="mega3d-$stamp"
+          cat > notes.md <<EOF
+          Xemu's MEGA65 emulator from the \`mega3d\` branch at commit [\`${GITHUB_SHA:0:8}\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA): upstream Xemu with the MEGA65's timing at full speed as measured on an R6 (opcodes, memory wait states, DMA, the CIAs to the cycle: [build/tests/timing-m65/README.md]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$GITHUB_SHA/build/tests/timing-m65/README.md), \`TIMING.md\` in each archive) and the uartmon commands for automated testing. No M65-MCP: this branch is the base for emulating the m65tr3d 3D renderer.
+
+          | | |
+          |---|---|
+          | \`xemu-mega3d-windows-x64.zip\` | Windows, 64-bit: unpack, run \`xmega65.exe\` |
+          | \`xemu-mega3d-macos-universal.zip\` | MacOS, Intel and Apple silicon: unpack, run \`xmega65\`. It is not signed: \`xattr -dr com.apple.quarantine .\` in its folder once, or right-click and Open |
+          | \`xemu-mega3d-linux-x86_64.tar.gz\` | Linux, x86-64 (built on Ubuntu 24.04): needs SDL2 and GTK 3, \`sudo apt install libsdl2-2.0-0 libgtk-3-0\` |
+
+          It is Xemu otherwise, and uses Xemu's own settings and files (a MEGA65 ROM as any Xemu needs). This is not an official Xemu build: the upstream's are at https://github.lgb.hu/xemu/.
+          EOF
+          cat notes.md
+          # (a run again on the same commit: the files put in place of the ones there)
+          gh release create "$tag" dist/* --target "$GITHUB_SHA" --prerelease --title "Xemu mega3d, $stamp" --notes-file notes.md \
+            || gh release upload "$tag" dist/* --clobber
