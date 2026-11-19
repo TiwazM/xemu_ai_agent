@@ -718,6 +718,20 @@ int dma_update ( void )
 		length--;	// non-MODulo mode, we simply decrement length counter ...
 	}
 	if (length <= 0) {			// end of DMA operation for the current DMA list entry?
+		// The MEGA65's DMA reads the source once more at the end of a copy with an incrementing
+		// source (the stepped address, the byte is dropped). It matters for read-sensitive
+		// sources: the m65tr3d renderer's FBWIN advances its pointer on it (board-measured:
+		// 960-byte jobs from $FFDF800 advance FBPTR by 961). Held, decrementing, line-drawing
+		// and MODulo sources are not measured, so they are left alone. The wait states of that
+		// read are not counted (the first read's are counted twice above already), and an
+		// undecoded address there is no error (a job ending at $FFDFFFF reads $FFE0000).
+		if (dma_op == COPY_OP && !modulo.used && source.step > 0 && !(source.ldm.slope_type & 0x80)) {
+			const int w = mem_wait_q4, skip = skip_unhandled_mem;
+			skip_unhandled_mem = 3;
+			(void)dma_read_source();
+			skip_unhandled_mem = skip;
+			mem_wait_q4 = w;
+		}
 		if (chained) {			// chained?
 			DEBUGDMA("DMA: end of operation, but chained!" NL);
 			in_dma = 0x81;	// still busy then, with also bit0 set (chained)
