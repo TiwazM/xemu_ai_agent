@@ -1,10 +1,10 @@
 name: mega3d builds
 
 # Xemu's MEGA65 emulator from the mega3d branch - upstream Xemu with the
-# measured MEGA65 timing (build/tests/timing-m65/README.md) and the uartmon
-# test commands, without the M65-MCP: the base for emulating the m65tr3d 3D
-# renderer, which sits where the MCP did ($FFDF000) - built for Linux,
-# Windows and MacOS and put on this repository's releases page.
+# measured MEGA65 timing (build/tests/timing-m65/README.md), the uartmon
+# test commands and the m65tr3d 3D renderer at $FFDF000 (targets/mega65/
+# tbdr65.c), without the M65-MCP - built for Linux, Windows and MacOS and put
+# on this repository's releases page.
 #
 # The upstream's own workflow (main.yml) is for the upstream's branches and
 # its download page; this one stands beside it and builds the MEGA65 emulator
@@ -167,7 +167,7 @@ jobs:
           stamp=`TZ=UTC git log -1 --format=%cd --date=format-local:%Y%m%d-%H%M%S`
           tag="mega3d-$stamp"
           cat > notes.md <<EOF
-          Xemu's MEGA65 emulator from the \`mega3d\` branch at commit [\`${GITHUB_SHA:0:8}\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA): upstream Xemu with the MEGA65's timing at full speed as measured on an R6 (opcodes, memory wait states, DMA, the CIAs to the cycle: [build/tests/timing-m65/README.md]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$GITHUB_SHA/build/tests/timing-m65/README.md), \`TIMING.md\` in each archive) and the uartmon commands for automated testing. No M65-MCP: this branch is the base for emulating the m65tr3d 3D renderer.
+          Xemu's MEGA65 emulator from the \`mega3d\` branch at commit [\`${GITHUB_SHA:0:8}\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA): upstream Xemu with the MEGA65's timing at full speed as measured on an R6 (opcodes, memory wait states, DMA, the CIAs to the cycle: [build/tests/timing-m65/README.md]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$GITHUB_SHA/build/tests/timing-m65/README.md), \`TIMING.md\` in each archive), the uartmon commands for automated testing, and the **m65tr3d 3D renderer** at \`\$FFDF000\` (the tile renderer with its float converter, indexed vertices and vertex unit, as core YV11; its pictures are the renderer's own C model, the one the hardware is verified against, so Slide programs draw what the board draws; \`-notbdr\` leaves the page undecoded). No M65-MCP.
 
           | | |
           |---|---|

@@ -36,6 +36,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 #include "audio65.h"
 #include "sdcard.h"
 #include "cart.h"
+#include "tbdr65.h"
 #include "configdb.h"
 #include <string.h>
 
@@ -143,6 +144,7 @@ typedef enum {
 	MEM_SLOT_TYPE_SLOW_DEVICES,
 	MEM_SLOT_TYPE_OPL3,
 	MEM_SLOT_TYPE_1541_RAM,
+	MEM_SLOT_TYPE_TBDR,
 	// All hypervisor dependent slots must be after this mark! AND MEM_SLOT_TYPE_HYPERVISOR_RAM must be the first!!!!!!!
 	// DO not put other kind of slots here!
 	MEM_SLOT_TYPE_HYPERVISOR_RAM,
@@ -189,6 +191,7 @@ int mem_wait_on = 0;
 #define WAIT_COLOUR_RAM		(2 * 16)	// a read of colour RAM, wherever it shows: at $FF80000, at $1F800, in the I/O area
 #define WAIT_PALETTE		(3 * 16)	// a read of the palette in the I/O area
 #define WAIT_CHAR_RAM		(2 * 16)
+#define WAIT_FASTIO_VFPGA	(2 * 16)	// a read in the vFPGA's fast I/O slot at $FFDF000 (measured with the M65-MCP there; the m65tr3d renderer sits in the same slot)
 #define WAIT_ATTIC_RD_CPU	(13 * 16)	// the attic RAM is another world: 13 cycles a read, 13.6 for the further ones of
 #define WAIT_ATTIC_RD_CPU_MORE	(13 * 16 + 10)	// the same opcode (LDQ's four take 53.9)
 #define WAIT_ATTIC_WR_CPU	(3 * 16)
@@ -293,6 +296,13 @@ static Uint8 eth_buffer_reader ( const Uint32 addr32 ) {
 }
 static void  eth_buffer_writer ( const Uint32 addr32, const Uint8 data ) {
 	eth_tx_buf[addr32 - 0xFFDE800U] = data;
+}
+static Uint8 tbdr_reader ( const Uint32 addr32 ) {
+	mem_wait_q4 += WAIT_FASTIO_VFPGA;
+	return tbdr65_read(addr32 - TBDR65_BASE_ADDR);
+}
+static void  tbdr_writer ( const Uint32 addr32, const Uint8 data ) {
+	tbdr65_write(addr32 - TBDR65_BASE_ADDR, data);
 }
 static Uint8 slow_devices_reader ( const Uint32 addr32 ) {
 	return cart_read_byte(addr32 - 0x4000000U);
@@ -405,7 +415,8 @@ static const struct mem_map_st mem_map[] = {
 	{ 0x0FFD8000U, 0x0FFDAFFFU, MEM_SLOT_TYPE_UNDECODED	},
 	{ 0x0FFDB000U, 0x0FFDE7FFU, MEM_SLOT_TYPE_1541_RAM	}, // 1541's 16K ROM + 4K RAM, not so much used currently, but freezer seems to access it, for example ... FIXME: wrong area?!
 	{ 0x0FFDE800U, 0x0FFDEFFFU, MEM_SLOT_TYPE_ETH_BUFFER	}, // ethernet RX/TX buffer(s)
-	{ 0x0FFDF000U, 0x0FFF7FFFU, MEM_SLOT_TYPE_UNDECODED	},
+	{ 0x0FFDF000U, 0x0FFDFFFFU, MEM_SLOT_TYPE_TBDR		}, // the m65tr3d 3D renderer (not in the stock core: undecoded with -notbdr)
+	{ 0x0FFE0000U, 0x0FFF7FFFU, MEM_SLOT_TYPE_UNDECODED	},
 	{ 0x0FFF8000U, 0x0FFFBFFFU, MEM_SLOT_TYPE_HYPERVISOR_RAM}, // 16KB HYPPO hickup/hypervisor ROM [do not confuse with Hyper-RAM aka Attic-RAM aka Slow-RAM!]
 	{ 0x0FFFC000U, 0x0FFFFFFFU, MEM_SLOT_TYPE_UNDECODED	},
 	{ 0x10000000U, 0xFFFFFFFFU, MEM_SLOT_TYPE_IMPOSSIBLE	}  // must be the last item! (above 28 bit address space to the max of 32 bits - because of using Uint32)
@@ -590,6 +601,14 @@ static void resolve_linear_slot ( const Uint32 slot, const Uint32 addr )
 			mem_slot_rd_func[slot] = dummy_reader;
 			mem_slot_wr_func[slot] = dummy_writer;
 			break;
+		case MEM_SLOT_TYPE_TBDR:
+			if (XEMU_LIKELY(!configdb.notbdr)) {
+				mem_slot_rd_func[slot] = tbdr_reader;
+				mem_slot_wr_func[slot] = tbdr_writer;
+				break;
+			}
+			// without the renderer, this is what it is on a stock MEGA65: nothing
+			// FALLTHROUGH
 		case MEM_SLOT_TYPE_UNDECODED:
 			if (slot <= MEM_SLOT_LAST_REAL) {
 				mem_slot_rd_func[slot] = undecoded_reader;

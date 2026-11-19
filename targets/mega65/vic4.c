@@ -23,6 +23,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 #include "vic4.h"
 #include "vic4_palette.h"
 #include "memory_mapper.h"
+#include "tbdr65.h"
 #include "hypervisor.h"
 #include "configdb.h"
 #include "uart_monitor.h"
@@ -1299,6 +1300,19 @@ static XEMU_INLINE void vic4_do_sprites ( void )
 
 // Render a monochrome character cell row
 // flip = 00 Dont flip, 01 = flip vertical, 10 = flip horizontal, 11 = flip both
+// A character row's bytes: chip RAM - or, at $40000-$5FFFF while the m65tr3d renderer's frame stores show
+// there (its FBMODE bit 2), the store's (tbdr65.c)
+static XEMU_INLINE const Uint8 *vic4_char_data ( const Uint32 addr )
+{
+	if (XEMU_UNLIKELY(tbdr65_vic_on)) {
+		const Uint8 *p = tbdr65_vic_char(addr);
+		if (p)
+			return p;
+	}
+	return main_ram + addr;
+}
+
+
 static XEMU_INLINE void vic4_render_mono_char_row ( Uint8 char_byte, const int glyph_width, const Uint8 bg_color, Uint8 fg_color, Uint8 vic3attr )
 {
 	const Uint32 *palette_now = used_palette;
@@ -1622,7 +1636,7 @@ static XEMU_INLINE void vic4_render_char_raster ( void )
 			// Render character cell row
 			if (SXA_4BIT_PER_PIXEL(color_data)) {	// 16-color character
 				vic4_render_16color_char_row(
-					main_ram + (((char_id * 64) + ((sel_char_row + char_fetch_offset) * 8)) & 0x7FFFF),
+					vic4_char_data(((char_id * 64) + ((sel_char_row + char_fetch_offset) * 8)) & 0x7FFFF),
 					16 - glyph_trim,
 					used_palette[char_bgcolor],		// bg SDL colour
 					used_palette[color_data & 0xFF],	// fg SDL colour
@@ -1635,7 +1649,7 @@ static XEMU_INLINE void vic4_render_char_raster ( void )
 				const Uint32 *palette_now = ((REG_VICIII_ATTRIBS) && SXA_ATTR_ALTPALETTE(color_data)) ? altpalette : used_palette;
 				if (XEMU_UNLIKELY((vic_registers[0x54] & 0x81) == 0x81 && SXA_ALPHA_BLEND(color_data)))
 					vic4_render_fullcolor_char_row_with_alpha(
-						main_ram + (((char_id * 64) + ((sel_char_row + char_fetch_offset) * 8)) & 0x7FFFF),
+						vic4_char_data(((char_id * 64) + ((sel_char_row + char_fetch_offset) * 8)) & 0x7FFFF),
 						8 - glyph_trim,
 						palette_now[char_bgcolor],		// bg SDL colour
 						palette_now[color_data & 0xFF],		// fg SDL colour
@@ -1643,7 +1657,7 @@ static XEMU_INLINE void vic4_render_char_raster ( void )
 					);
 				else
 					vic4_render_fullcolor_char_row(
-						main_ram + (((char_id * 64) + ((sel_char_row + char_fetch_offset) * 8)) & 0x7FFFF),
+						vic4_char_data(((char_id * 64) + ((sel_char_row + char_fetch_offset) * 8)) & 0x7FFFF),
 						8 - glyph_trim,
 						palette_now[char_bgcolor],		// bg SDL colour
 						palette_now[color_data & 0xFF],		// fg SDL colour

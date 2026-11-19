@@ -23,6 +23,8 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 #include "xemu/emutools.h"
 #include "mega65.h"
 #include "uart_monitor.h"
+#include "tbdr65.h"
+#include "configdb.h"
 #include "xemu/cpu65.h"
 #include "memory_mapper.h"
 #include "sdcard.h"
@@ -62,7 +64,7 @@ void (*m65mon_callback)(void) = NULL;
 int breakpoint_pc = -1;
 int watchpoint_addr = -1;
 int watchpoint_val = -1;
-// --- Monitor extensions for automated testing / AI agents (~frames, ~joy, ~shot, ~sleepless, ~mem, ~load) ---
+// --- Monitor extensions for automated testing / AI agents (~frames, ~joy, ~shot, ~sleepless, ~mem, ~load, ~tbdrframe) ---
 int   umon_frames_left = 0;			// >0: run this many frames, then pause and answer
 Uint8 umon_joy_mask[2] = { 0xFF, 0xFF };	// active-low joystick override masks for port 1 and 2
 static int   umon_shot_pending = 0;
@@ -434,6 +436,15 @@ static void execute_command ( char *cmd )
 					umon_printf("SHOT QUEUED %s", cmd);
 				} else
 					umon_printf(UMON_SYNTAX_ERROR "path missing or too long");
+			} else if (!strncmp(cmd, "tbdrframe", 9)) {
+				// ~tbdrframe PATH : the m65tr3d renderer's last frame (its frame store, 64 bytes a character) to PATH
+				cmd += 9;
+				while (*cmd == 32)
+					cmd++;
+				if (*cmd && !configdb.notbdr)
+					umon_printf(tbdr65_dump_frame(cmd) ? "TBDRFRAME FAILED %s" : "TBDRFRAME %s", cmd);
+				else
+					umon_printf(UMON_SYNTAX_ERROR "path missing, or no renderer (-notbdr)");
 			} else if (!strncmp(cmd, "sleepless", 9)) {
 				// ~sleepless 0|1 : run as fast as the host can (1) or at real speed (0)
 				cmd = parse_hex_arg(cmd + 9, &par1, 0, 1);
